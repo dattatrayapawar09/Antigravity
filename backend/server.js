@@ -4,7 +4,7 @@
  * Run: node server.js (from /backend directory)
  */
 
-require('dotenv').config();
+require('dotenv').config({ path: __dirname + '/.env' });
 const express    = require('express');
 const cors       = require('cors');
 const SmartAPI   = require('./smartapi');
