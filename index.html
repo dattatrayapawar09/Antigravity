@@ -10,7 +10,21 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <div class="app-container">
+    <!-- LOGIN SCREEN -->
+    <div id="app-login" class="login-overlay">
+        <div class="login-box glass-panel">
+            <i data-lucide="lock" style="width: 48px; height: 48px; color: var(--info); margin-bottom: 1rem;"></i>
+            <h2>Restricted Access</h2>
+            <p>Please enter the password to access the Pro Scanner.</p>
+            <input type="password" id="app-password" class="glass-input" placeholder="Enter Password" autocomplete="off" autofocus>
+            <p id="login-error" class="login-error" style="display: none;">Incorrect password.</p>
+            <button id="btn-login" class="btn-primary" style="width: 100%; margin-top: 1rem; justify-content: center;">
+                Unlock Dashboard
+            </button>
+        </div>
+    </div>
+
+    <div class="app-container" id="main-app-container" style="display: none;">
         <!-- HEADER -->
         <header class="glass-header">
             <div class="header-left">

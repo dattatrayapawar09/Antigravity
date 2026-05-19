@@ -740,4 +740,36 @@ function initUI() {
     }, 5000);
 }
 
-document.addEventListener('DOMContentLoaded', initUI);
+document.addEventListener('DOMContentLoaded', () => {
+    const loginOverlay = document.getElementById('app-login');
+    const mainApp = document.getElementById('main-app-container');
+    const passInput = document.getElementById('app-password');
+    const btnLogin = document.getElementById('btn-login');
+    const errorMsg = document.getElementById('login-error');
+
+    // Check if already authenticated in this session
+    if (sessionStorage.getItem('app_auth') === 'true') {
+        loginOverlay.style.display = 'none';
+        mainApp.style.display = 'flex';
+        initUI();
+        return;
+    }
+
+    function attemptLogin() {
+        if (passInput.value === 'datta@7020083825') {
+            sessionStorage.setItem('app_auth', 'true');
+            loginOverlay.style.display = 'none';
+            mainApp.style.display = 'flex';
+            initUI();
+        } else {
+            errorMsg.style.display = 'block';
+            passInput.value = '';
+            passInput.focus();
+        }
+    }
+
+    btnLogin.addEventListener('click', attemptLogin);
+    passInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') attemptLogin();
+    });
+});
