@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: antigravity-backend
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 18.x
+      - key: PORT
+        value: 10000
+      - key: ANGEL_API_KEY
+        value: DUMMY_KEY_REPLACE_ME
+      - key: ANGEL_CLIENT_ID
+        value: DUMMY_CLIENT_ID
+      - key: ANGEL_PASSWORD
+        value: DUMMY_PASSWORD
+      - key: ANGEL_TOTP_SECRET
+        value: DUMMY_TOTP_SECRET
