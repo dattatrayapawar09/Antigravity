@@ -32,6 +32,12 @@
                     <span class="pulse-indicator"></span>
                     Live Market
                 </div>
+                <div id="api-status-badge" class="api-badge mock">
+                    <span></span> Mock Mode
+                </div>
+                <button class="nav-btn" id="btn-settings" title="SmartAPI Settings">
+                    <i data-lucide="settings" style="width:16px;height:16px;"></i>
+                </button>
             </div>
         </header>
 
@@ -184,6 +190,58 @@
 
     <!-- ALERTS TOAST CONTAINER -->
     <div class="toast-container" id="toast-container"></div>
+
+    <!-- SMARTAPI SETTINGS MODAL -->
+    <div class="modal-overlay" id="settings-modal" style="display:none;">
+        <div class="modal-box glass-panel">
+            <div class="modal-header">
+                <div style="display:flex;align-items:center;gap:0.75rem;">
+                    <i data-lucide="key" style="color:var(--warning);width:20px;"></i>
+                    <h3>Angel One SmartAPI Settings</h3>
+                </div>
+                <button class="btn-back" id="btn-close-settings"><i data-lucide="x"></i></button>
+            </div>
+
+            <div id="api-connection-status" class="modal-status mock">
+                <span class="pulse-indicator" style="background:var(--warning);"></span>
+                <span id="modal-status-text">Not connected — running in Mock Mode</span>
+            </div>
+
+            <div class="modal-body">
+                <p class="modal-hint">Enter your credentials from <a href="https://smartapi.angelone.in" target="_blank">smartapi.angelone.in</a>. These are saved in <code>backend/.env</code> on your server — never exposed to the browser.</p>
+
+                <div class="setting-field">
+                    <label>API Key</label>
+                    <input type="text" id="s-api-key" class="glass-input" placeholder="e.g. aBcD1234XyZ">
+                </div>
+                <div class="setting-field">
+                    <label>Client ID</label>
+                    <input type="text" id="s-client-id" class="glass-input" placeholder="e.g. A123456">
+                </div>
+                <div class="setting-field">
+                    <label>Trading PIN / Password</label>
+                    <input type="password" id="s-password" class="glass-input" placeholder="Your Angel One PIN">
+                </div>
+                <div class="setting-field">
+                    <label>TOTP Secret (from SmartAPI dashboard)</label>
+                    <input type="text" id="s-totp" class="glass-input" placeholder="Base32 secret key for 2FA">
+                </div>
+
+                <div style="display:flex;gap:1rem;margin-top:1.5rem;">
+                    <button class="btn-primary" id="btn-save-settings">
+                        <i data-lucide="save" style="width:16px;"></i> Save &amp; Connect
+                    </button>
+                    <button class="btn-secondary" id="btn-test-connection">
+                        <i data-lucide="zap" style="width:16px;"></i> Test Connection
+                    </button>
+                </div>
+
+                <div class="modal-note">
+                    <strong>Note:</strong> After saving, restart the backend server (<code>node backend/server.js</code>) for changes to take effect.
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="app.js"></script>
 </body>

@@ -1,6 +1,82 @@
 /**
  * Indian Options Trading Analytics - PRO Engine
+ * Angel One SmartAPI Integration (with mock fallback)
  */
+
+// --- 0. SmartAPI Integration Layer ---
+// Backend URL: update PROD_BACKEND_URL after deploying to Render/Railway
+const PROD_BACKEND_URL = 'https://antigravity-backend.onrender.com'; // update after deploy
+const IS_LOCAL = window.location.hostname === 'localhost' || window.location.protocol === 'file:';
+const BACKEND_URL = IS_LOCAL ? 'http://localhost:3001' : PROD_BACKEND_URL;
+
+let apiConnected  = false;   // true = live SmartAPI data
+let liveSpotCache = {};      // symbol → live spot price from SmartAPI
+
+const SmartApiService = {
+    /** Check backend auth status and update UI badge */
+    async checkStatus() {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/auth/status`, { signal: AbortSignal.timeout(3000) });
+            const data = await res.json();
+            apiConnected = !!data.connected;
+        } catch {
+            apiConnected = false;
+        }
+        this._updateBadge();
+        return apiConnected;
+    },
+
+    /** Fetch live spot prices for key F&O symbols and cache them */
+    async refreshSpotPrices() {
+        if (!apiConnected) return;
+        try {
+            // Get instrument list
+            const instrRes = await fetch(`${BACKEND_URL}/api/instruments/fno`);
+            const instrData = await instrRes.json();
+            if (!instrData.instruments?.length) return;
+
+            // Fetch LTP quotes
+            const quoteRes = await fetch(`${BACKEND_URL}/api/market/quote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ instruments: instrData.instruments, mode: 'LTP' }),
+                signal: AbortSignal.timeout(5000),
+            });
+            const quoteData = await quoteRes.json();
+
+            if (quoteData.connected && quoteData.data) {
+                // Parse response — SmartAPI returns { fetched: [...], unfetched: [...] }
+                const fetched = quoteData.data.fetched || [];
+                fetched.forEach(item => {
+                    if (item.tradingSymbol && item.ltp) {
+                        liveSpotCache[item.tradingSymbol] = parseFloat(item.ltp);
+                    }
+                });
+                console.log(`[SmartAPI] Updated ${Object.keys(liveSpotCache).length} spot prices`);
+            }
+        } catch (err) {
+            console.warn('[SmartAPI] Failed to refresh spot prices:', err.message);
+        }
+    },
+
+    /** Get live spot price for a symbol, or null if not available */
+    getLiveSpot(symbol) {
+        return liveSpotCache[symbol] || null;
+    },
+
+    /** Update the Live/Mock status badge in the header */
+    _updateBadge() {
+        const badge = document.getElementById('api-status-badge');
+        if (!badge) return;
+        if (apiConnected) {
+            badge.className = 'api-badge live';
+            badge.innerHTML = '<span class="pulse-indicator"></span> SmartAPI Live';
+        } else {
+            badge.className = 'api-badge mock';
+            badge.innerHTML = '<span></span> Mock Mode';
+        }
+    },
+};
 
 // --- 1. Universe & Mock Data Setup ---
 const ALL_FNO_SYMBOLS = [
@@ -103,16 +179,16 @@ function updateUniverseTrigger() {
     }
 }
 
-// --- 2. Market Data Generation (Mock) ---
+// --- 2. Market Data Generation (Mock + Live Hybrid) ---
 function generateInitialData() {
     marketData = [];
     
     // Generate for ALL universe to maintain persistent engine state
     ALL_FNO_SYMBOLS.forEach(symbol => {
-        let spotPrice = BASE_PRICES[symbol];
-        if(!spotPrice) {
-            spotPrice = Math.floor(Math.random() * 4000) + 200;
-        }
+        // Prefer live spot price from SmartAPI, fall back to BASE_PRICES, then random
+        let spotPrice = SmartApiService.getLiveSpot(symbol)
+                     || BASE_PRICES[symbol]
+                     || (Math.floor(Math.random() * 4000) + 200);
 
         const strikeGap = STRIKE_GAPS[symbol] || Math.max(5, Math.floor(spotPrice * 0.01));
         
@@ -568,11 +644,100 @@ function initUI() {
         });
     });
 
+    // --- Settings Modal ---
+    const settingsModal = document.getElementById('settings-modal');
+
+    document.getElementById('btn-settings').addEventListener('click', () => {
+        // Populate fields from localStorage if previously saved
+        document.getElementById('s-api-key').value   = localStorage.getItem('sa_api_key')   || '';
+        document.getElementById('s-client-id').value = localStorage.getItem('sa_client_id') || '';
+        document.getElementById('s-password').value  = '';
+        document.getElementById('s-totp').value       = localStorage.getItem('sa_totp')      || '';
+
+        // Update modal status badge
+        const statusEl  = document.getElementById('api-connection-status');
+        const statusTxt = document.getElementById('modal-status-text');
+        if (apiConnected) {
+            statusEl.className = 'modal-status live';
+            statusTxt.textContent = `Connected — SmartAPI Live Mode (${localStorage.getItem('sa_client_id') || ''})`;
+        } else {
+            statusEl.className = 'modal-status mock';
+            statusTxt.textContent = 'Not connected — running in Mock Mode';
+        }
+
+        settingsModal.style.display = 'flex';
+        if (window.lucide) lucide.createIcons({ root: settingsModal });
+    });
+
+    document.getElementById('btn-close-settings').addEventListener('click', () => {
+        settingsModal.style.display = 'none';
+    });
+
+    settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) settingsModal.style.display = 'none';
+    });
+
+    // Test Connection — triggers a login attempt via the backend
+    document.getElementById('btn-test-connection').addEventListener('click', async () => {
+        const btn = document.getElementById('btn-test-connection');
+        btn.textContent = 'Testing...';
+        btn.disabled = true;
+        try {
+            const res  = await fetch(`${BACKEND_URL}/api/auth/login`, { method: 'POST', signal: AbortSignal.timeout(8000) });
+            const data = await res.json();
+            const statusEl  = document.getElementById('api-connection-status');
+            const statusTxt = document.getElementById('modal-status-text');
+            if (data.connected) {
+                statusEl.className = 'modal-status live';
+                statusTxt.textContent = 'Connected! SmartAPI Live Mode active ✓';
+                apiConnected = true;
+                SmartApiService._updateBadge();
+            } else {
+                statusEl.className = 'modal-status mock';
+                statusTxt.textContent = `Login failed: ${data.reason || 'Check credentials'}`;
+            }
+        } catch {
+            document.getElementById('modal-status-text').textContent = 'Backend not reachable. Start: node backend/server.js';
+        }
+        btn.innerHTML = '<i data-lucide="zap" style="width:16px;"></i> Test Connection';
+        btn.disabled = false;
+        if (window.lucide) lucide.createIcons({ root: settingsModal });
+    });
+
+    // Save — stores keys to localStorage (backend still needs .env restart for real use)
+    document.getElementById('btn-save-settings').addEventListener('click', () => {
+        const apiKey   = document.getElementById('s-api-key').value.trim();
+        const clientId = document.getElementById('s-client-id').value.trim();
+        const totp     = document.getElementById('s-totp').value.trim();
+        if (apiKey)   localStorage.setItem('sa_api_key',   apiKey);
+        if (clientId) localStorage.setItem('sa_client_id', clientId);
+        if (totp)     localStorage.setItem('sa_totp',      totp);
+        createToast('Settings Saved', 'Update backend/.env with these values, then restart the server.', 'alert-warning', 'info');
+        settingsModal.style.display = 'none';
+    });
+
     // Start Engine
     document.getElementById('universe-select-group').style.display = 'none'; // Default to index tab view
     generateInitialData();
     renderDashboard();
     updateInterval = setInterval(simulateMarketTick, 2000);
+
+    // --- SmartAPI Live Integration ---
+    // Check API status on startup and every 30 seconds
+    SmartApiService.checkStatus().then(connected => {
+        if (connected) {
+            SmartApiService.refreshSpotPrices().then(() => {
+                // Re-generate data with live spots if available
+                generateInitialData();
+                renderDashboard();
+            });
+        }
+    });
+    setInterval(() => SmartApiService.checkStatus(), 30000);
+    // Refresh live spot prices every 5 seconds when connected
+    setInterval(() => {
+        if (apiConnected) SmartApiService.refreshSpotPrices();
+    }, 5000);
 }
 
 document.addEventListener('DOMContentLoaded', initUI);
