@@ -8,6 +8,7 @@ require('dotenv').config();
 const express    = require('express');
 const cors       = require('cors');
 const SmartAPI   = require('./smartapi');
+const instrumentUtils = require('./utils/instrumentUtils');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -108,6 +109,53 @@ app.post('/api/market/optionchain', async (req, res) => {
 });
 
 /**
+ * GET /api/instruments/options
+ * Query: ?symbol=NIFTY&expiry=25JAN2024&spotPrice=23700&numStrikes=10
+ * Returns standard mapped CE/PE token chain for the requested options.
+ */
+app.get('/api/instruments/options', (req, res) => {
+    const { symbol, expiry, spotPrice, numStrikes } = req.query;
+    
+    if (!symbol) return res.status(400).json({ error: 'symbol query param is required' });
+    if (!spotPrice) return res.status(400).json({ error: 'spotPrice query param is required' });
+    
+    const mapping = instrumentUtils.generateOptionChainMapping(
+        symbol, 
+        expiry, 
+        parseFloat(spotPrice), 
+        numStrikes ? parseInt(numStrikes, 10) : 10
+    );
+    
+    if (mapping.error) {
+        return res.status(404).json(mapping);
+    }
+    
+    res.json(mapping);
+});
+
+/**
+ * POST /api/instruments/bulk-options
+ * Body: { requests: [{ symbol, expiry, spotPrice }], numStrikes }
+ * Returns mappings for multiple symbols
+ */
+app.post('/api/instruments/bulk-options', (req, res) => {
+    const { requests, numStrikes } = req.body;
+    if (!Array.isArray(requests)) return res.status(400).json({ error: 'requests array is required' });
+    
+    const results = {};
+    for (const req of requests) {
+        if (!req.symbol || !req.spotPrice) continue;
+        results[req.symbol] = instrumentUtils.generateOptionChainMapping(
+            req.symbol, 
+            req.expiry, 
+            parseFloat(req.spotPrice), 
+            numStrikes ? parseInt(numStrikes, 10) : 10
+        );
+    }
+    res.json(results);
+});
+
+/**
  * GET /api/instruments/fno
  * Returns key F&O instrument tokens for NIFTY, BANKNIFTY, and top stocks
  * These tokens are static (from Angel One instrument master) and rarely change
@@ -149,7 +197,13 @@ app.listen(PORT, async () => {
     console.log(`   POST /api/auth/login`);
     console.log(`   POST /api/market/quote`);
     console.log(`   POST /api/market/optionchain`);
-    console.log(`   GET  /api/instruments/fno\n`);
+    console.log(`   GET  /api/instruments/fno`);
+    console.log(`   GET  /api/instruments/options\n`);
+    
+    await instrumentUtils.fetchAndCacheScripMaster();
+    // Auto-refresh scrip master daily
+    setInterval(instrumentUtils.fetchAndCacheScripMaster, 24 * 60 * 60 * 1000);
+    
     await autoLogin();
     // Auto-refresh every 5.5 hours
     setInterval(autoLogin, 5.5 * 60 * 60 * 1000);

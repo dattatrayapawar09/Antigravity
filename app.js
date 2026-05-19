@@ -180,27 +180,104 @@ function updateUniverseTrigger() {
 }
 
 // --- 2. Market Data Generation (Mock + Live Hybrid) ---
-function generateInitialData() {
+async function generateInitialData() {
     marketData = [];
     
-    // Generate for ALL universe to maintain persistent engine state
-    ALL_FNO_SYMBOLS.forEach(symbol => {
-        // Prefer live spot price from SmartAPI, fall back to BASE_PRICES, then random
-        let spotPrice = SmartApiService.getLiveSpot(symbol)
-                     || BASE_PRICES[symbol]
-                     || (Math.floor(Math.random() * 4000) + 200);
+    // Build request for backend
+    const requests = ALL_FNO_SYMBOLS.map(symbol => {
+        let spotPrice = SmartApiService.getLiveSpot(symbol) || BASE_PRICES[symbol] || (Math.floor(Math.random() * 4000) + 200);
+        return { symbol, spotPrice };
+    });
 
-        const strikeGap = STRIKE_GAPS[symbol] || Math.max(5, Math.floor(spotPrice * 0.01));
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/instruments/bulk-options`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requests, numStrikes: 10 })
+        });
+        const bulkData = await res.json();
         
-        EXPIRIES.forEach(expiry => {
-            // Generate 10 ITM, 10 OTM
-            for (let i = -10; i <= 10; i++) {
-                const strike = Math.round(spotPrice + (i * strikeGap));
-                marketData.push(createOptionObject(symbol, 'CE', strike, spotPrice, expiry));
-                marketData.push(createOptionObject(symbol, 'PE', strike, spotPrice, expiry));
+        ALL_FNO_SYMBOLS.forEach(symbol => {
+            const data = bulkData[symbol];
+            let spotPrice = requests.find(r => r.symbol === symbol).spotPrice;
+            
+            if (data && data.chain && !data.error) {
+                data.chain.forEach(opt => {
+                    marketData.push(createOptionObjectWithToken(opt, spotPrice));
+                });
+            } else {
+                // Fallback to pure mock if mapping fails
+                const strikeGap = STRIKE_GAPS[symbol] || Math.max(5, Math.floor(spotPrice * 0.01));
+                const atmStrike = Math.round(spotPrice / strikeGap) * strikeGap;
+                const expiries = ['WEEK1', 'WEEK2', 'MONTH1'];
+                expiries.forEach(expiry => {
+                    for (let i = -10; i <= 10; i++) {
+                        const strike = atmStrike + (i * strikeGap);
+                        marketData.push(createOptionObject(symbol, 'CE', strike, spotPrice, expiry));
+                        marketData.push(createOptionObject(symbol, 'PE', strike, spotPrice, expiry));
+                    }
+                });
             }
         });
-    });
+    } catch (err) {
+        console.warn('Backend mapping failed, using standard mock data.', err);
+        ALL_FNO_SYMBOLS.forEach(symbol => {
+            let spotPrice = requests.find(r => r.symbol === symbol).spotPrice;
+            const strikeGap = STRIKE_GAPS[symbol] || Math.max(5, Math.floor(spotPrice * 0.01));
+            const atmStrike = Math.round(spotPrice / strikeGap) * strikeGap;
+            const expiries = ['WEEK1', 'WEEK2', 'MONTH1'];
+            expiries.forEach(expiry => {
+                for (let i = -10; i <= 10; i++) {
+                    const strike = atmStrike + (i * strikeGap);
+                    marketData.push(createOptionObject(symbol, 'CE', strike, spotPrice, expiry));
+                    marketData.push(createOptionObject(symbol, 'PE', strike, spotPrice, expiry));
+                }
+            });
+        });
+    }
+    
+    renderDashboard();
+}
+
+function createOptionObjectWithToken(opt, spot) {
+    const { symbol, token, underlying, expiry, strike, type, exch_seg, lotsize } = opt;
+    const distance = Math.abs(strike - spot) / spot;
+    
+    const baseOI = Math.floor(Math.random() * 100000) * (1 - distance * 5) + 1000;
+    const baseVol = Math.floor(Math.random() * 500000) * (1 - distance * 5) + 500;
+    
+    const willSurge = Math.random() > 0.85; 
+    const avgVolTarget = willSurge ? Math.floor(baseVol * (Math.random() * 0.4 + 0.1)) : Math.floor(baseVol * 1.1);
+    
+    const intrinsic = type === 'CE' ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
+    const timeValue = (spot * 0.05) * Math.max(0, 1 - (distance * 20)) * Math.sqrt(10 / 365);
+    const price = intrinsic + timeValue + (Math.random() * 2);
+    
+    const past5DaysVolume = Array.from({length: 5}, () => Math.max(100, Math.floor(avgVolTarget * (1 + (Math.random() * 0.4 - 0.2)))));
+    const avgVol = Math.floor(past5DaysVolume.reduce((sum, val) => sum + val, 0) / 5);
+
+    return {
+        id: `${underlying}_${expiry}_${strike}_${type}`,
+        token,
+        realSymbol: symbol,
+        exch_seg,
+        lotsize,
+        symbol: underlying,
+        type, 
+        strike, 
+        spot, 
+        expiry,
+        price: parseFloat(price.toFixed(2)),
+        prevPrice: parseFloat((price * (1 + (Math.random() * 0.04 - 0.02))).toFixed(2)),
+        oi: Math.max(100, Math.floor(baseOI)),
+        prevOi: Math.max(100, Math.floor(baseOI * (1 + (Math.random() * 0.1 - 0.05)))),
+        volume: Math.max(100, Math.floor(baseVol)),
+        avgVol: Math.max(100, Math.floor(avgVol)),
+        past5DaysVolume,
+        iv: Math.floor(Math.random() * 30) + 10,
+        spread: (price * 0.005).toFixed(2),
+        timestamp: new Date().toLocaleTimeString('en-IN')
+    };
 }
 
 function createOptionObject(symbol, type, strike, spot, expiry) {
@@ -304,6 +381,78 @@ function simulateMarketTick() {
     });
     
     if(document.getElementById('view-dashboard').classList.contains('active')) {
+        renderDashboard();
+    }
+}
+
+async function fetchLiveMarketTick() {
+    if (!apiConnected || !marketData || marketData.length === 0) {
+        return simulateMarketTick();
+    }
+    
+    // Filter active options to save API calls
+    const activeData = marketData.filter(d => selectedUniverse.includes(d.symbol) && d.token);
+    if (activeData.length === 0) return;
+
+    // SmartAPI allows max 50 symbols per request
+    const tokens = activeData.map(d => ({
+        exchange: d.exch_seg || (d.type === 'CE' || d.type === 'PE' ? 'NFO' : 'NSE'),
+        symboltoken: d.token,
+        tradingsymbol: d.realSymbol || d.id
+    }));
+    
+    const chunked = [];
+    for (let i = 0; i < tokens.length; i += 50) {
+        chunked.push(tokens.slice(i, i + 50));
+    }
+
+    let hasUpdates = false;
+
+    for (const chunk of chunked) {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/market/quote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ instruments: chunk, mode: 'FULL' }),
+                signal: AbortSignal.timeout(5000),
+            });
+            const data = await res.json();
+            
+            if (data.connected && data.data && data.data.fetched) {
+                const quoteMap = {};
+                data.data.fetched.forEach(q => { quoteMap[q.symbolToken] = q; });
+                
+                marketData = marketData.map(opt => {
+                    if (opt.token && quoteMap[opt.token]) {
+                        const q = quoteMap[opt.token];
+                        hasUpdates = true;
+                        
+                        const newPrice = parseFloat(q.ltp) || opt.price;
+                        const prevPrice = parseFloat(q.closePrice) || opt.prevPrice;
+                        const newVol = parseInt(q.volume) || opt.volume;
+                        const newOi = parseInt(q.opnInterest) || opt.oi;
+                        
+                        const updatedOpt = {
+                            ...opt,
+                            prevPrice: prevPrice,
+                            price: newPrice,
+                            volume: newVol,
+                            oi: newOi,
+                            timestamp: new Date().toLocaleTimeString('en-IN', { hour12: false })
+                        };
+                        
+                        if(currentInsightId === updatedOpt.id) updateInsightsView(updatedOpt);
+                        return updatedOpt;
+                    }
+                    return opt;
+                });
+            }
+        } catch (err) {
+            console.warn('[SmartAPI] Live tick fetch failed:', err.message);
+        }
+    }
+    
+    if (hasUpdates && document.getElementById('view-dashboard').classList.contains('active')) {
         renderDashboard();
     }
 }
@@ -718,9 +867,20 @@ function initUI() {
 
     // Start Engine
     document.getElementById('universe-select-group').style.display = 'none'; // Default to index tab view
-    generateInitialData();
-    renderDashboard();
-    updateInterval = setInterval(simulateMarketTick, 2000);
+    
+    // Fetch real mapping and init dashboard
+    generateInitialData().then(() => {
+        // Polling loop
+        async function tickLoop() {
+            if (apiConnected) {
+                await fetchLiveMarketTick();
+            } else {
+                simulateMarketTick();
+            }
+            updateInterval = setTimeout(tickLoop, 3000);
+        }
+        tickLoop();
+    });
 
     // --- SmartAPI Live Integration ---
     // Check API status on startup and every 30 seconds
@@ -729,7 +889,6 @@ function initUI() {
             SmartApiService.refreshSpotPrices().then(() => {
                 // Re-generate data with live spots if available
                 generateInitialData();
-                renderDashboard();
             });
         }
     });
