@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indian Options Trading Analytics | Pro Scanner</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- HEADER -->
+        <header class="glass-header">
+            <div class="header-left">
+                <i data-lucide="activity" class="logo-icon"></i>
+                <div>
+                    <h1>Options Surge Scanner <span class="badge-pro">PRO</span></h1>
+                    <p class="subtitle">Real-time F&O Analytics Engine</p>
+                </div>
+            </div>
+            
+            <div class="header-nav">
+                <button class="nav-btn active" id="nav-index">Index Options</button>
+                <button class="nav-btn" id="nav-stocks">Stock Options</button>
+                <button class="nav-btn" id="nav-insights">Insights</button>
+            </div>
+
+            <div class="header-right">
+                <div class="market-status">
+                    <span class="pulse-indicator"></span>
+                    Live Market
+                </div>
+            </div>
+        </header>
+
+        <!-- DASHBOARD VIEW -->
+        <main class="view-section active" id="view-dashboard">
+            
+            <!-- ADVANCED FILTER BAR -->
+            <div class="filter-bar glass-panel">
+                <div class="filter-group universe-select-container" id="universe-select-group">
+                    <label>Universe Selection (Multi)</label>
+                    <div class="custom-select" id="universe-select-wrapper">
+                        <div class="select-trigger">Select Symbols...</div>
+                        <div class="select-dropdown">
+                            <input type="text" class="search-input" id="universe-search" placeholder="Search F&O Stocks...">
+                            <div style="display:flex; justify-content: space-between; padding: 0.5rem 1rem; border-bottom: 1px solid var(--border-color);">
+                                <button id="btn-select-all" class="nav-btn" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">Select All</button>
+                                <button id="btn-clear-all" class="nav-btn" style="padding: 0.2rem 0.5rem; font-size: 0.75rem; color: var(--bearish);">Clear All</button>
+                            </div>
+                            <div class="select-options" id="universe-options">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="filter-group">
+                    <label>Expiry</label>
+                    <select id="filter-expiry" class="glass-input">
+                        <option value="ALL">All Expiries</option>
+                        <option value="WEEK1">Current Week</option>
+                        <option value="WEEK2">Next Week</option>
+                        <option value="MONTH1">Current Month</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>Vol Ratio ></label>
+                    <input type="number" id="filter-vol-ratio" class="glass-input small-input" value="1.0" step="0.5">
+                </div>
+
+                <div class="filter-group">
+                    <label>Min OI Chg %</label>
+                    <input type="number" id="filter-oi-chg" class="glass-input small-input" value="0">
+                </div>
+
+                <div class="filter-group">
+                    <label>Type</label>
+                    <div class="toggle-group">
+                        <button class="toggle-btn active" data-val="ALL">ALL</button>
+                        <button class="toggle-btn" data-val="CE">CE</button>
+                        <button class="toggle-btn" data-val="PE">PE</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TABLE -->
+            <div class="table-container glass-panel">
+                <div class="table-header-area">
+                    <h2>Top 50 Volume Surges</h2>
+                    <span class="text-muted">Click any row to open Insights</span>
+                </div>
+                <div class="table-wrapper">
+                    <table id="options-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Exp</th>
+                                <th>Type</th>
+                                <th>Strike</th>
+                                <th>Spot</th>
+                                <th>LTP</th>
+                                <th>Cur Vol</th>
+                                <th>Avg Vol</th>
+                                <th>Ratio</th>
+                                <th>OI</th>
+                                <th>OI Chg</th>
+                                <th>IV</th>
+                                <th>Spread</th>
+                                <th>Signal Strength</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            <tr class="loading-row"><td colspan="14">Initializing Market Data Engine...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+
+        <!-- INSIGHTS VIEW -->
+        <main class="view-section" id="view-insights">
+            <div class="insights-header glass-panel">
+                <button class="btn-back" id="btn-back-dashboard"><i data-lucide="arrow-left"></i> Back</button>
+                <h2 id="insight-title">Select an option from the dashboard</h2>
+                <div id="insight-badges"></div>
+            </div>
+
+            <div class="insights-grid" id="insights-content" style="display: none;">
+                <!-- AI Insight -->
+                <div class="insight-card ai-card glass-panel" style="grid-column: span 12;">
+                    <div class="card-header"><i data-lucide="sparkles" class="icon-ai"></i> AI Trade Insight</div>
+                    <p id="ai-insight-text">Analyzing market conditions...</p>
+                </div>
+
+                <!-- Main Chart -->
+                <div class="insight-card chart-card glass-panel" style="grid-column: span 8; grid-row: span 2;">
+                    <div class="card-header"><i data-lucide="line-chart"></i> Price & Volume Trend</div>
+                    <div class="chart-container">
+                        <canvas id="historicalChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Metrics Grid -->
+                <div class="insight-card glass-panel" style="grid-column: span 4;">
+                    <div class="card-header"><i data-lucide="activity"></i> Greeks & Volatility</div>
+                    <div class="metrics-list">
+                        <div class="metric-item"><span>Implied Volatility (IV)</span><span id="ins-iv" class="font-bold">--</span></div>
+                        <div class="metric-item"><span>IV Trend</span><span id="ins-iv-trend" class="font-bold">--</span></div>
+                        <div class="metric-item"><span>Delta (Est)</span><span id="ins-delta" class="font-bold">--</span></div>
+                        <div class="metric-item"><span>Bid/Ask Spread</span><span id="ins-spread" class="font-bold">--</span></div>
+                    </div>
+                </div>
+
+                <div class="insight-card glass-panel" style="grid-column: span 4;">
+                    <div class="card-header"><i data-lucide="bar-chart-2"></i> Aggregate Chain Data</div>
+                    <div class="metrics-list">
+                        <div class="metric-item"><span>Put-Call Ratio (PCR)</span><span id="ins-pcr" class="font-bold">--</span></div>
+                        <div class="metric-item"><span>Max Pain Strike</span><span id="ins-maxpain" class="font-bold">--</span></div>
+                        <div class="metric-item"><span>Est. Support</span><span id="ins-support" class="font-bold">--</span></div>
+                        <div class="metric-item"><span>Est. Resistance</span><span id="ins-resistance" class="font-bold">--</span></div>
+                    </div>
+                </div>
+
+                <div class="insight-card glass-panel" style="grid-column: span 12;">
+                    <div class="card-header"><i data-lucide="radar"></i> Smart Money Activity</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-labels">
+                            <span>Retail Selling</span>
+                            <span id="smart-money-text" class="font-bold info">Accumulation Phase</span>
+                            <span>Inst. Buying</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill info-bg" id="smart-money-bar" style="width: 50%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ALERTS TOAST CONTAINER -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
