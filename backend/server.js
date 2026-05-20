@@ -45,7 +45,7 @@ async function autoLogin() {
 }
 
 // ─── Helper: Batch Quote Fetch ────────────────────────────────────────────────
-// SmartAPI allows max 50 tokens per quote call.
+// SmartAPI allows max 50 tokens per call. Groups by exchange for the API.
 async function batchQuote(instruments, mode = 'LTP') {
     const BATCH = 50;
     const results = {};
@@ -53,18 +53,24 @@ async function batchQuote(instruments, mode = 'LTP') {
         const batch = instruments.slice(i, i + BATCH);
         try {
             const data = await client.getQuote(batch, mode);
-            const fetched = data?.fetched || [];
+            if (!data) { console.warn('[Server] batchQuote: null response from getQuote'); continue; }
+            const fetched = data.fetched || [];
+            if (i === 0) {
+                console.log(`[Server] batchQuote sample response key: ${fetched[0] ? JSON.stringify(Object.keys(fetched[0])) : 'empty'}`);
+            }
             fetched.forEach(q => {
-                // Angel One uses symbolToken (string) in the response
-                const key = String(q.symbolToken || q.token || '');
+                // Angel One response uses 'symbolToken' (camelCase with capital T)
+                const key = String(q.symbolToken || q.symboltoken || q.token || '');
                 if (key) results[key] = q;
             });
+            console.log(`[Server] batchQuote batch ${Math.floor(i/BATCH)+1}: ${fetched.length} filled of ${batch.length} requested`);
         } catch (e) {
             console.error('[Server] batchQuote error:', e.message);
         }
     }
     return results;
 }
+
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
