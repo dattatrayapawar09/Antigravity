@@ -4,7 +4,10 @@
  * Run: node server.js (from /backend directory)
  */
 
-require('dotenv').config({ path: __dirname + '/.env' });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+console.log('[DEBUG] ANGEL_API_KEY loaded:', !!process.env.ANGEL_API_KEY);
+console.log('[DEBUG] ANGEL_CLIENT_ID loaded:', !!process.env.ANGEL_CLIENT_ID);
 const express    = require('express');
 const cors       = require('cors');
 const SmartAPI   = require('./smartapi');
