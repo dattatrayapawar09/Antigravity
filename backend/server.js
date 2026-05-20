@@ -5,7 +5,12 @@
  */
 
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env') });
+if (dotenvResult.error) {
+    console.error('[DEBUG] dotenv load error:', dotenvResult.error);
+} else {
+    console.log('[DEBUG] dotenv loaded successfully');
+}
 console.log('[DEBUG] ANGEL_API_KEY loaded:', !!process.env.ANGEL_API_KEY);
 console.log('[DEBUG] ANGEL_CLIENT_ID loaded:', !!process.env.ANGEL_CLIENT_ID);
 const express    = require('express');
