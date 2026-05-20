@@ -28,7 +28,7 @@ app.use(express.json());
 // --- SmartAPI Client ---
 const client = new SmartAPI({
     apiKey:      process.env.ANGEL_API_KEY,
-    clientId:    process.env.ANGEL_CLIENT_ID,
+    clientId:    process.env.ANGEL_CLIENT_ID || process.env.ANGEL_CLIENT_CODE,
     password:    process.env.ANGEL_PASSWORD,
     totpSecret:  process.env.ANGEL_TOTP_SECRET,
 });
