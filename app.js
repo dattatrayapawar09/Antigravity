@@ -263,42 +263,30 @@ async function generateInitialData() {
 
 function createOptionObjectWithToken(opt, spot) {
     const { symbol, token, underlying, expiry, strike, type, exch_seg, lotsize } = opt;
-    const distance = Math.abs(strike - spot) / spot;
-    
-    const baseOI = Math.floor(Math.random() * 100000) * (1 - distance * 5) + 1000;
-    const baseVol = Math.floor(Math.random() * 500000) * (1 - distance * 5) + 500;
-    
-    const willSurge = Math.random() > 0.85; 
-    const avgVolTarget = willSurge ? Math.floor(baseVol * (Math.random() * 0.4 + 0.1)) : Math.floor(baseVol * 1.1);
-    
-    const intrinsic = type === 'CE' ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
-    const timeValue = (spot * 0.05) * Math.max(0, 1 - (distance * 20)) * Math.sqrt(10 / 365);
-    const price = intrinsic + timeValue + (Math.random() * 2);
-    
-    const past5DaysVolume = Array.from({length: 5}, () => Math.max(100, Math.floor(avgVolTarget * (1 + (Math.random() * 0.4 - 0.2)))));
-    const avgVol = Math.floor(past5DaysVolume.reduce((sum, val) => sum + val, 0) / 5);
-
+    // NOTE: LTP/OI/Volume are intentionally 0 here.
+    // fetchRealOptionLTP() will populate them with real Angel One data immediately after.
     return {
-        id: `${underlying}_${expiry}_${strike}_${type}`,
+        id:           `${underlying}_${expiry}_${strike}_${type}`,
         token,
-        realSymbol: symbol,
+        realSymbol:   symbol,
         exch_seg,
         lotsize,
-        symbol: underlying,
-        type, 
-        strike, 
-        spot, 
+        symbol:       underlying,
+        type,
+        strike,
+        spot,
         expiry,
-        price: parseFloat(price.toFixed(2)),
-        prevPrice: parseFloat((price * (1 + (Math.random() * 0.04 - 0.02))).toFixed(2)),
-        oi: Math.max(100, Math.floor(baseOI)),
-        prevOi: Math.max(100, Math.floor(baseOI * (1 + (Math.random() * 0.1 - 0.05)))),
-        volume: Math.max(100, Math.floor(baseVol)),
-        avgVol: Math.max(100, Math.floor(avgVol)),
-        past5DaysVolume,
-        iv: Math.floor(Math.random() * 30) + 10,
-        spread: (price * 0.005).toFixed(2),
-        timestamp: new Date().toLocaleTimeString('en-IN')
+        price:        0,
+        prevPrice:    0,
+        oi:           0,
+        prevOi:       0,
+        volume:       0,
+        avgVol:       0,
+        past5DaysVolume: [0, 0, 0, 0, 0],
+        iv:           0,
+        spread:       '0.00',
+        liveDataReady: false,
+        timestamp:    new Date().toLocaleTimeString('en-IN')
     };
 }
 
@@ -378,33 +366,83 @@ function calculateMetrics(option) {
 }
 
 // --- 4. Live Updates & Alerts ---
+
+/**
+ * Fetch real LTP, OI, Volume for all option contracts in marketData.
+ * Batches 50 tokens per call. Updates marketData in-place.
+ */
+async function fetchRealOptionLTP() {
+    if (!apiConnected) return;
+    const tokensNeeded = marketData.filter(d => d.token && d.exch_seg);
+    if (!tokensNeeded.length) return;
+
+    // Build contracts list for the backend
+    const contracts = tokensNeeded.map(d => ({
+        token:        d.token,
+        exch_seg:     d.exch_seg,
+        tradingsymbol: d.realSymbol || '',
+        underlying:   d.symbol,
+        strike:       d.strike,
+        type:         d.type,
+        expiry:       d.expiry,
+    }));
+
+    try {
+        const res  = await fetch(`${BACKEND_URL}/api/market/option-ltp`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ contracts }),
+            signal:  AbortSignal.timeout(30000),
+        });
+        const data = await res.json();
+        if (!data.connected || !data.quotes) return;
+
+        let updated = 0;
+        marketData = marketData.map(opt => {
+            const q = data.quotes[String(opt.token)];
+            if (!q || q.ltp === undefined) return opt;
+            updated++;
+            return {
+                ...opt,
+                prevPrice:     opt.liveDataReady ? opt.price : (q.closePrice || q.ltp),
+                price:         q.ltp,
+                prevOi:        opt.liveDataReady ? opt.oi : q.oi,
+                oi:            q.oi,
+                volume:        q.volume,
+                iv:            opt.iv || 0,
+                spread:        q.ltp > 0 ? (q.ltp * 0.005).toFixed(2) : '0.00',
+                liveDataReady: true,
+                timestamp:     new Date().toLocaleTimeString('en-IN', { hour12: false })
+            };
+        });
+        console.log(`[SmartAPI] fetchRealOptionLTP: ${updated}/${tokensNeeded.length} contracts updated with live data`);
+    } catch (err) {
+        console.warn('[SmartAPI] fetchRealOptionLTP failed:', err.message);
+    }
+}
+
 function simulateMarketTick() {
+    // Only simulate if no real data is available (pure mock mode)
+    if (apiConnected) return;
     marketData = marketData.map(opt => {
         if (Math.random() > 0.8) {
-            const priceVol = opt.price * 0.01;
-            const newPrice = Math.max(0.05, opt.price + (Math.random() * priceVol * 2 - priceVol));
-            const newOi = Math.max(100, opt.oi + (Math.random() * opt.oi * 0.05 * 2 - opt.oi * 0.05));
-            const newVol = opt.volume + Math.floor(Math.random() * 1000);
-            const newIv = opt.iv + (Math.random() * 2 - 1); // Fluctuating IV
-
+            const p = Math.max(0.5, opt.price || 10);
+            const newPrice = Math.max(0.05, p + (Math.random() * p * 0.02 - p * 0.01));
+            const newOi  = Math.max(100, (opt.oi || 1000) + (Math.random() * 500 - 250));
+            const newVol = (opt.volume || 1000) + Math.floor(Math.random() * 200);
             const updatedOpt = {
-                ...opt, prevPrice: opt.price, price: parseFloat(newPrice.toFixed(2)),
-                prevOi: opt.oi, oi: Math.floor(newOi), volume: newVol, iv: parseFloat(newIv.toFixed(1)),
+                ...opt,
+                prevPrice: opt.price, price: parseFloat(newPrice.toFixed(2)),
+                prevOi:    opt.oi,   oi:    Math.floor(newOi),
+                volume:    newVol,
                 timestamp: new Date().toLocaleTimeString('en-IN', { hour12: false })
             };
-            
-            checkAndFireAlerts(updatedOpt);
-            
-            if(currentInsightId === updatedOpt.id) updateInsightsView(updatedOpt);
-
+            if (currentInsightId === updatedOpt.id) updateInsightsView(updatedOpt);
             return updatedOpt;
         }
         return opt;
     });
-    
-    if(document.getElementById('view-dashboard').classList.contains('active')) {
-        renderDashboard();
-    }
+    if (document.getElementById('view-dashboard').classList.contains('active')) renderDashboard();
 }
 
 async function fetchLiveMarketTick() {
@@ -888,37 +926,51 @@ function initUI() {
     });
 
     // Start Engine
-    document.getElementById('universe-select-group').style.display = 'none'; // Default to index tab view
-    
-    // Fetch real mapping and init dashboard
-    generateInitialData().then(() => {
-        // Polling loop
+    document.getElementById('universe-select-group').style.display = 'none';
+
+    // ── Startup sequence ──────────────────────────────────────────────────
+    // 1. Check if backend is live
+    // 2. If live: fetch real spot prices, then build option chains, then fetch real LTP
+    // 3. If not: build with BASE_PRICES and simulate ticks
+    // NOTE: We call generateInitialData ONCE here. Do not call it again from anywhere else.
+    SmartApiService.checkStatus().then(async connected => {
+        // generateInitialData handles both live and mock cases internally
+        await generateInitialData();
+
+        // After initial chain is built, immediately fetch real LTP (only if live)
+        if (apiConnected) {
+            console.log('[App] Fetching real option LTP for initial display...');
+            await fetchRealOptionLTP();
+            renderDashboard();
+        }
+
+        // ── Polling loop ─────────────────────────────────────────────────
+        // Live: refresh option LTPs every 60s (Angel One rate limits apply)
+        // Mock: simulate random ticks every 3s
         async function tickLoop() {
             if (apiConnected) {
-                await fetchLiveMarketTick();
+                await fetchRealOptionLTP();
+                if (document.getElementById('view-dashboard').classList.contains('active')) {
+                    renderDashboard();
+                }
+                updateInterval = setTimeout(tickLoop, 60000); // 60s for live
             } else {
                 simulateMarketTick();
+                updateInterval = setTimeout(tickLoop, 3000);  // 3s for mock
             }
-            updateInterval = setTimeout(tickLoop, 3000);
         }
         tickLoop();
     });
 
-    // --- SmartAPI Live Integration ---
-    // Check API status on startup and every 30 seconds
-    SmartApiService.checkStatus().then(connected => {
-        if (connected) {
-            SmartApiService.refreshSpotPrices().then(() => {
-                // Re-generate data with live spots if available
-                generateInitialData();
-            });
-        }
-    });
+    // Re-check auth status every 30s
     setInterval(() => SmartApiService.checkStatus(), 30000);
-    // Refresh live spot prices every 5 seconds when connected
-    setInterval(() => {
-        if (apiConnected) SmartApiService.refreshSpotPrices();
-    }, 5000);
+
+    // Refresh underlying spot prices every 5 minutes (not every 5s — that's too aggressive)
+    setInterval(async () => {
+        if (apiConnected) {
+            await SmartApiService.refreshSpotPrices(selectedUniverse);
+        }
+    }, 5 * 60 * 1000);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
