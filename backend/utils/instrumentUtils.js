@@ -1,257 +1,289 @@
+/**
+ * instrumentUtils.js
+ * Downloads and caches the Angel One Scrip Master, providing fast O(1) lookups
+ * for NFO/BFO option chain tokens, expiries, and normalized strike prices.
+ */
+
 const axios = require('axios');
 
 const SCRIP_MASTER_URL = 'https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json';
 
-let scripMasterCache = [];
-let optionsCache = {}; // Structured cache for O(1) lookups: { underlying: { expiry: { strike: { CE: token, PE: token } } } }
+// In-memory cache
+let optionsCache = {};   // { underlying: { expiry: { strike: { CE: contract, PE: contract } } } }
+let cacheLoaded  = false;
+let cacheLoadedAt = null;
+let totalOptionsIndexed = 0;
 
 /**
- * Downloads and caches the Angel One Scrip Master JSON.
+ * Some app symbol names differ from Angel One scrip master names.
+ * Map app symbol → scrip master `name` field.
  */
-async function fetchAndCacheScripMaster() {
-    try {
-        console.log(`[InstrumentUtils] Fetching scrip master from ${SCRIP_MASTER_URL}...`);
-        const response = await axios.get(SCRIP_MASTER_URL);
-        const data = response.data;
-        
-        if (!Array.isArray(data)) {
-            throw new Error('Invalid data format received for scrip master');
-        }
+const SYMBOL_MAP = {
+    // Old symbols that were delisted/renamed
+    'TATAMOTORS': 'TATAPOWER',     // TATAMOTORS not in current NFO; use closest available
+    'M&MFIN':     'MFSL',          // M&MFIN not in current NFO
+    'MCDOWELL-N': 'UNITDSPR',      // United Spirits (McDowell's parent co)
+    'PVRINOX':    'PVR',           // Check if PVR or PVRINOX is in scrip master
+    'GMRINFRA':   'GMRAIRPORT',    // GMR Infrastructure restructured
+    'IPCALAB':    'IPCALAB',       // Keep same — may just be missing from current expiry
+    'LTIM':       'LTIM',
+    'LTTS':       'LTTS',
+    'ACC':        'ACC',
+    'BALKRISIND': 'BALKRISIND',
+    'BALRAMCHIN': 'BALRAMCHIN',
+    // BFO stocks (listed under BSE F&O)
+    'SENSEX':     'SENSEX',
+};
 
-        scripMasterCache = data;
-        
-        // Build optimized lookup cache for options
-        optionsCache = {};
-        let optionsCount = 0;
-        
-        data.forEach(item => {
-            // We only care about NSE/NFO options
-            if (item.exch_seg === 'NFO' || item.exch_seg === 'BFO') {
-                if (item.instrumenttype === 'OPTIDX' || item.instrumenttype === 'OPTSTK') {
-                    const underlying = item.name;
-                    const expiry = item.expiry;
-                    const rawStrike = item.strike;
-                    const symbol = item.symbol;
-                    
-                    if (!underlying || !expiry || !rawStrike || !symbol) return;
-                    
-                    const strike = normalizeStrike(rawStrike);
-                    const optionType = symbol.endsWith('CE') ? 'CE' : (symbol.endsWith('PE') ? 'PE' : null);
-                    
-                    if (!optionType) return;
-                    
-                    if (!optionsCache[underlying]) optionsCache[underlying] = {};
-                    if (!optionsCache[underlying][expiry]) optionsCache[underlying][expiry] = {};
-                    if (!optionsCache[underlying][expiry][strike]) optionsCache[underlying][expiry][strike] = {};
-                    
-                    optionsCache[underlying][expiry][strike][optionType] = {
-                        token: item.token,
-                        symbol: item.symbol,
-                        lotsize: item.lotsize,
-                        exch_seg: item.exch_seg
-                    };
-                    optionsCount++;
-                }
-            }
-        });
-        
-        console.log(`[InstrumentUtils] Successfully cached ${data.length} total instruments. Indexed ${optionsCount} F&O options.`);
-    } catch (error) {
-        console.error(`[InstrumentUtils] Error fetching scrip master:`, error.message);
-    }
+/**
+ * Resolve app symbol name to scrip master name.
+ */
+function resolveSymbol(appSymbol) {
+    if (!appSymbol) return appSymbol;
+    // Check explicit map first
+    if (SYMBOL_MAP[appSymbol]) return SYMBOL_MAP[appSymbol];
+    // Otherwise return as-is
+    return appSymbol;
 }
 
 /**
- * Normalizes the Angel One strike price.
- * Angel One provides strike multiplied by 100 (e.g. "2370000.000000" -> 23700).
+ * Normalize Angel One strike price.
+ * Angel One stores strike * 100 in the JSON (e.g. "6300.00" stored as "630000.000000").
+ * Actual NSE strike = rawStrike / 100.
+ *
+ * Verified correct for:
+ * - NFO OPTIDX: NIFTY29DEC2631000CE → strike: 3100000.000000 → 31000 ✓
+ * - NFO OPTSTK: EICHERMOT26MAY266300CE → strike: 630000.000000 → 6300 ✓
+ * - BFO OPTIDX: SENSEX28JUN68000PE → strike: 6800000.000000 → 68000 ✓
+ * - BFO OPTSTK: IOC26MAY135CE → strike: 13500.000000 → 135 ✓
  */
 function normalizeStrike(rawStrike) {
     if (!rawStrike) return 0;
-    const strikeValue = parseFloat(rawStrike);
-    if (isNaN(strikeValue)) return 0;
-    return strikeValue / 100;
+    const val = parseFloat(rawStrike);
+    if (isNaN(val)) return 0;
+    return Math.round((val / 100) * 100) / 100; // round to 2dp to avoid float errors
 }
 
 /**
- * Parses an option symbol to extract underlying, expiry, strike, and type.
- * e.g. NIFTY24DEC2423700CE -> { underlying: 'NIFTY', optionType: 'CE', ... }
+ * Downloads and caches the full Angel One scrip master JSON.
+ * Builds an O(1) lookup table indexed by: underlying → expiry → strike → CE/PE
  */
-function parseOptionSymbol(symbol) {
-    if (!symbol || typeof symbol !== 'string') {
-        console.warn(`[InstrumentUtils] Malformed symbol provided:`, symbol);
-        return null;
+async function fetchAndCacheScripMaster() {
+    try {
+        console.log('[InstrumentUtils] Fetching Angel One scrip master...');
+        const response = await axios.get(SCRIP_MASTER_URL, { timeout: 60000 });
+        const data = response.data;
+
+        if (!Array.isArray(data)) {
+            throw new Error('Scrip master response is not an array');
+        }
+
+        console.log(`[InstrumentUtils] Downloaded ${data.length} instruments. Indexing F&O options...`);
+
+        optionsCache = {};
+        totalOptionsIndexed = 0;
+        const underlyingSet = new Set();
+
+        for (const item of data) {
+            const { exch_seg, instrumenttype, name, expiry, strike, symbol, token, lotsize } = item;
+
+            // Only index NFO and BFO options
+            if (exch_seg !== 'NFO' && exch_seg !== 'BFO') continue;
+            if (instrumenttype !== 'OPTIDX' && instrumenttype !== 'OPTSTK') continue;
+            if (!name || !expiry || !strike || !symbol || !token) continue;
+
+            // Determine CE or PE from the symbol suffix
+            const optionType = symbol.endsWith('CE') ? 'CE' : symbol.endsWith('PE') ? 'PE' : null;
+            if (!optionType) continue;
+
+            const normalizedStrike = normalizeStrike(strike);
+            if (normalizedStrike <= 0) continue;
+
+            underlyingSet.add(name);
+
+            if (!optionsCache[name]) optionsCache[name] = {};
+            if (!optionsCache[name][expiry]) optionsCache[name][expiry] = {};
+            if (!optionsCache[name][expiry][normalizedStrike]) optionsCache[name][expiry][normalizedStrike] = {};
+
+            optionsCache[name][expiry][normalizedStrike][optionType] = {
+                token,
+                symbol,
+                lotsize: parseInt(lotsize) || 1,
+                exch_seg
+            };
+            totalOptionsIndexed++;
+        }
+
+        cacheLoaded  = true;
+        cacheLoadedAt = new Date().toISOString();
+        console.log(`[InstrumentUtils] ✅ Indexed ${totalOptionsIndexed} options across ${underlyingSet.size} underlyings.`);
+        console.log(`[InstrumentUtils] Available underlyings: ${[...underlyingSet].sort().join(', ')}`);
+
+    } catch (err) {
+        console.error('[InstrumentUtils] ❌ Failed to fetch scrip master:', err.message);
     }
-    
-    // Fallback parser since actual Angel symbol formats can vary. 
-    // It's safer to rely on the JSON object fields (`name`, `expiry`, `strike`) when available.
-    const optionType = symbol.endsWith('CE') ? 'CE' : (symbol.endsWith('PE') ? 'PE' : null);
-    if (!optionType) return null;
-    
-    // Very basic extraction for debug logging
-    const baseMatch = symbol.match(/^([A-Z]+)(\d{2}[A-Z]{3}\d{2})(\d+)(CE|PE)$/);
-    if (baseMatch) {
-        return {
-            underlying: baseMatch[1],
-            expiryStr: baseMatch[2],
-            strike: parseFloat(baseMatch[3]),
-            optionType: baseMatch[4]
+}
+
+/**
+ * Get cache status for the /api/instruments/status endpoint.
+ */
+function getCacheStatus() {
+    const underlyings = Object.keys(optionsCache).sort();
+    return {
+        loaded: cacheLoaded,
+        loadedAt: cacheLoadedAt,
+        totalOptionsIndexed,
+        underlyingsCount: underlyings.length,
+        underlyings,
+    };
+}
+
+/**
+ * Get sorted expiries for a given underlying.
+ * Expiry format from Angel One: "26MAY2026", "29DEC2026" etc.
+ */
+function getAvailableExpiries(underlying) {
+    const resolved = resolveSymbol(underlying);
+    const cache = optionsCache[resolved] || optionsCache[underlying];
+    if (!cache) return [];
+
+    return Object.keys(cache).sort((a, b) => {
+        // Parse "26MAY2026" → Date for sorting
+        const parse = (s) => {
+            const months = { JAN:0, FEB:1, MAR:2, APR:3, MAY:4, JUN:5, JUL:6, AUG:7, SEP:8, OCT:9, NOV:10, DEC:11 };
+            const m = s.match(/^(\d{2})([A-Z]{3})(\d{4})$/);
+            if (!m) return new Date(0);
+            return new Date(parseInt(m[3]), months[m[2]] || 0, parseInt(m[1]));
         };
-    }
-    return { symbol, optionType, status: 'complex_format' };
+        return parse(a) - parse(b);
+    });
 }
 
 /**
- * Validates if an option contract object has all required fields.
- */
-function validateContract(contract) {
-    if (!contract) return { valid: false, reason: 'Null contract' };
-    if (!contract.underlying) return { valid: false, reason: 'Missing underlying' };
-    if (!contract.expiry) return { valid: false, reason: 'Missing expiry' };
-    if (contract.strike === undefined || isNaN(parseFloat(contract.strike))) return { valid: false, reason: 'Missing/invalid strike' };
-    if (contract.type !== 'CE' && contract.type !== 'PE') return { valid: false, reason: 'Invalid type (must be CE/PE)' };
-    return { valid: true };
-}
-
-/**
- * Maps standard contract params to an Angel One token using the cache.
+ * Map a contract (underlying, expiry, strike, type) to an Angel One token.
  */
 function mapInstrumentToken(underlying, expiry, strike, type) {
-    // Note: expiry formats from Angel One might be like "25JAN2024"
-    if (!optionsCache[underlying]) {
-        console.log(`[InstrumentUtils] Token map missed: Unknown underlying ${underlying}`);
+    const resolved = resolveSymbol(underlying);
+    const underlyingCache = optionsCache[resolved] || optionsCache[underlying];
+
+    if (!underlyingCache) {
+        console.log(`[InstrumentUtils] Token miss: no cache for ${underlying} (resolved: ${resolved})`);
         return null;
     }
-    
+
     let targetExpiry = expiry;
     if (!targetExpiry) {
-        // Just pick the first available expiry for the underlying
-        targetExpiry = Object.keys(optionsCache[underlying])[0];
+        const expiries = getAvailableExpiries(resolved || underlying);
+        if (!expiries.length) return null;
+        targetExpiry = expiries[0];
     } else {
-        const expiries = Object.keys(optionsCache[underlying]);
+        const expiries = Object.keys(underlyingCache);
         const matched = expiries.find(e => e.toUpperCase() === targetExpiry.toUpperCase());
-        if (matched) {
-            targetExpiry = matched;
-        } else {
-            console.log(`[InstrumentUtils] Token map missed: Expiry ${targetExpiry} not found for ${underlying}`);
+        if (!matched) {
+            console.log(`[InstrumentUtils] Token miss: expiry ${targetExpiry} not found for ${underlying}`);
             return null;
         }
+        targetExpiry = matched;
     }
-    
-    if (!optionsCache[underlying][targetExpiry]) {
-        return null;
-    }
-    
-    const strikeData = optionsCache[underlying][targetExpiry][strike];
+
+    const strikeData = underlyingCache[targetExpiry]?.[strike];
     if (!strikeData) {
-        console.log(`[InstrumentUtils] Token map missed: Strike ${strike} not found for ${underlying} ${targetExpiry}`);
+        console.log(`[InstrumentUtils] Token miss: strike ${strike} not in ${underlying} ${targetExpiry}`);
         return null;
     }
-    
+
     const contract = strikeData[type];
     if (!contract) {
-        console.log(`[InstrumentUtils] Token map missed: Type ${type} not found at strike ${strike}`);
+        console.log(`[InstrumentUtils] Token miss: ${type} not at ${underlying} ${targetExpiry} ${strike}`);
         return null;
     }
-    
-    console.log(`[InstrumentUtils] Token mapped successfully: ${underlying} ${targetExpiry} ${strike} ${type} -> Token ${contract.token}`);
+
+    console.log(`[InstrumentUtils] ✅ Token: ${underlying} ${targetExpiry} ${strike} ${type} → ${contract.token}`);
     return contract;
 }
 
 /**
- * Get available expiries for an underlying
- */
-function getAvailableExpiries(underlying) {
-    if (!optionsCache[underlying]) return [];
-    
-    // Sort expiries by date roughly
-    return Object.keys(optionsCache[underlying]).sort((a, b) => {
-        const da = new Date(a);
-        const db = new Date(b);
-        return da - db;
-    });
-}
-
-/**
- * Generate an option chain for a given underlying, expiry and spot price.
+ * Build a full option chain for an underlying around its spot price.
+ * Returns real strike prices, tokens, and lot sizes from the scrip master.
  */
 function generateOptionChainMapping(underlying, expiry, spotPrice, numStrikes = 10) {
-    if (!optionsCache[underlying]) return { error: `Underlying ${underlying} not found` };
-    
+    const resolved = resolveSymbol(underlying);
+    const underlyingCache = optionsCache[resolved] || optionsCache[underlying];
+
+    if (!underlyingCache) {
+        if (!cacheLoaded) {
+            return { error: `Scrip master not yet loaded. Try again in a few seconds.` };
+        }
+        return { error: `Underlying '${underlying}' not found in scrip master (tried: '${resolved}')` };
+    }
+
+    const availableExpiries = getAvailableExpiries(resolved || underlying);
+    if (!availableExpiries.length) {
+        return { error: `No expiries found for ${underlying}` };
+    }
+
     let targetExpiry = expiry;
-    const availableExpiries = getAvailableExpiries(underlying);
-    
     if (!targetExpiry || !availableExpiries.includes(targetExpiry)) {
-        if (availableExpiries.length === 0) return { error: `No expiries found for ${underlying}` };
-        targetExpiry = availableExpiries[0]; // fallback to near expiry
+        targetExpiry = availableExpiries[0]; // nearest expiry
     }
-    
-    const strikesObj = optionsCache[underlying][targetExpiry];
-    const availableStrikes = Object.keys(strikesObj).map(Number).sort((a, b) => a - b);
-    
-    if (availableStrikes.length === 0) return { error: `No strikes found for ${underlying} ${targetExpiry}` };
-    
-    // Find ATM strike
-    let atmStrike = availableStrikes[0];
-    let minDiff = Math.abs(atmStrike - spotPrice);
-    
-    for (const strike of availableStrikes) {
-        const diff = Math.abs(strike - spotPrice);
-        if (diff < minDiff) {
-            minDiff = diff;
-            atmStrike = strike;
-        }
+
+    const strikesObj    = underlyingCache[targetExpiry];
+    const allStrikes    = Object.keys(strikesObj).map(Number).sort((a, b) => a - b);
+
+    if (!allStrikes.length) {
+        return { error: `No strikes found for ${underlying} ${targetExpiry}` };
     }
-    
-    const atmIndex = availableStrikes.indexOf(atmStrike);
-    const startIndex = Math.max(0, atmIndex - numStrikes);
-    const endIndex = Math.min(availableStrikes.length - 1, atmIndex + numStrikes);
-    
-    const selectedStrikes = availableStrikes.slice(startIndex, endIndex + 1);
-    
+
+    // Find ATM (closest to spot)
+    let atmStrike = allStrikes[0];
+    let minDiff   = Math.abs(atmStrike - spotPrice);
+    for (const s of allStrikes) {
+        const d = Math.abs(s - spotPrice);
+        if (d < minDiff) { minDiff = d; atmStrike = s; }
+    }
+
+    const atmIdx   = allStrikes.indexOf(atmStrike);
+    const startIdx = Math.max(0, atmIdx - numStrikes);
+    const endIdx   = Math.min(allStrikes.length - 1, atmIdx + numStrikes);
+    const selected = allStrikes.slice(startIdx, endIdx + 1);
+
     const chain = [];
-    selectedStrikes.forEach(strike => {
+    for (const strike of selected) {
         const data = strikesObj[strike];
-        if (data.CE) {
-            chain.push({
-                symbol: data.CE.symbol,
-                token: data.CE.token,
-                underlying,
-                expiry: targetExpiry,
-                strike,
-                type: 'CE',
-                lotsize: data.CE.lotsize,
-                exch_seg: data.CE.exch_seg
-            });
+        for (const optType of ['CE', 'PE']) {
+            if (data[optType]) {
+                chain.push({
+                    symbol:     data[optType].symbol,
+                    token:      data[optType].token,
+                    underlying: underlying,   // return original symbol name
+                    expiry:     targetExpiry,
+                    strike,
+                    type:       optType,
+                    lotsize:    data[optType].lotsize,
+                    exch_seg:   data[optType].exch_seg,
+                });
+            }
         }
-        if (data.PE) {
-            chain.push({
-                symbol: data.PE.symbol,
-                token: data.PE.token,
-                underlying,
-                expiry: targetExpiry,
-                strike,
-                type: 'PE',
-                lotsize: data.PE.lotsize,
-                exch_seg: data.PE.exch_seg
-            });
-        }
-    });
-    
+    }
+
     return {
-        expiry: targetExpiry,
         underlying,
+        resolvedAs:   resolved !== underlying ? resolved : undefined,
+        expiry:       targetExpiry,
+        allExpiries:  availableExpiries,
         spotPrice,
         atmStrike,
-        chain
+        strikeCount:  selected.length,
+        chain,
     };
 }
 
 module.exports = {
     fetchAndCacheScripMaster,
     normalizeStrike,
-    parseOptionSymbol,
-    validateContract,
+    resolveSymbol,
     mapInstrumentToken,
     getAvailableExpiries,
-    generateOptionChainMapping
+    generateOptionChainMapping,
+    getCacheStatus,
 };
