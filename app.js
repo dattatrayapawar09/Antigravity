@@ -27,32 +27,20 @@ const SmartApiService = {
     },
 
     /** Fetch live spot prices for key F&O symbols and cache them */
-    async refreshSpotPrices() {
+    async refreshSpotPrices(symbols) {
         if (!apiConnected) return;
         try {
-            // Get instrument list
-            const instrRes = await fetch(`${BACKEND_URL}/api/instruments/fno`);
-            const instrData = await instrRes.json();
-            if (!instrData.instruments?.length) return;
-
-            // Fetch LTP quotes
-            const quoteRes = await fetch(`${BACKEND_URL}/api/market/quote`, {
+            const syms = symbols || ALL_FNO_SYMBOLS;
+            const res = await fetch(`${BACKEND_URL}/api/instruments/spot`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ instruments: instrData.instruments, mode: 'LTP' }),
-                signal: AbortSignal.timeout(5000),
+                body: JSON.stringify({ symbols: syms }),
+                signal: AbortSignal.timeout(30000),
             });
-            const quoteData = await quoteRes.json();
-
-            if (quoteData.connected && quoteData.data) {
-                // Parse response — SmartAPI returns { fetched: [...], unfetched: [...] }
-                const fetched = quoteData.data.fetched || [];
-                fetched.forEach(item => {
-                    if (item.tradingSymbol && item.ltp) {
-                        liveSpotCache[item.tradingSymbol] = parseFloat(item.ltp);
-                    }
-                });
-                console.log(`[SmartAPI] Updated ${Object.keys(liveSpotCache).length} spot prices`);
+            const data = await res.json();
+            if (data.spotPrices) {
+                Object.assign(liveSpotCache, data.spotPrices);
+                console.log(`[SmartAPI] Live spot prices received: ${Object.keys(data.spotPrices).length}/${syms.length}`);
             }
         } catch (err) {
             console.warn('[SmartAPI] Failed to refresh spot prices:', err.message);
@@ -205,12 +193,20 @@ function updateUniverseTrigger() {
 // --- 2. Market Data Generation (Mock + Live Hybrid) ---
 async function generateInitialData() {
     marketData = [];
-    
-    // Build request for backend
-    const requests = ALL_FNO_SYMBOLS.map(symbol => {
-        let spotPrice = SmartApiService.getLiveSpot(symbol) || BASE_PRICES[symbol] || (Math.floor(Math.random() * 4000) + 200);
+
+    // Step 1: Fetch LIVE spot prices from backend (uses Angel One LTP)
+    if (apiConnected) {
+        console.log('[App] Fetching live spot prices for all symbols...');
+        await SmartApiService.refreshSpotPrices(selectedUniverse);
+    }
+
+    // Step 2: Build option chain requests using live spot prices (fallback to BASE_PRICES)
+    const requests = selectedUniverse.map(symbol => {
+        const spotPrice = SmartApiService.getLiveSpot(symbol) || BASE_PRICES[symbol] || 1000;
         return { symbol, spotPrice };
     });
+
+    console.log(`[App] Building option chains for ${requests.length} symbols...`);
 
     try {
         const res = await fetch(`${BACKEND_URL}/api/instruments/bulk-options`, {
@@ -219,21 +215,25 @@ async function generateInitialData() {
             body: JSON.stringify({ requests, numStrikes: 10 })
         });
         const bulkData = await res.json();
-        
-        ALL_FNO_SYMBOLS.forEach(symbol => {
-            const data = bulkData[symbol];
-            let spotPrice = requests.find(r => r.symbol === symbol).spotPrice;
-            
-            if (data && data.chain && !data.error) {
+
+        selectedUniverse.forEach(symbol => {
+            const data     = bulkData[symbol];
+            const spotReq  = requests.find(r => r.symbol === symbol);
+            const spotPrice = spotReq ? spotReq.spotPrice : (BASE_PRICES[symbol] || 1000);
+
+            if (data && data.chain && data.chain.length && !data.error) {
+                // Use real Angel One option tokens & strikes
+                const liveSpot = data.spotPrice || spotPrice;
                 data.chain.forEach(opt => {
-                    marketData.push(createOptionObjectWithToken(opt, spotPrice));
+                    marketData.push(createOptionObjectWithToken(opt, liveSpot));
                 });
+                console.log(`[App] ${symbol}: ${data.chain.length} options loaded (ATM=${data.atmStrike}, spot=${liveSpot})`);
             } else {
-                // Fallback to pure mock if mapping fails
+                // Fallback mock if symbol not in scrip master
+                console.warn(`[App] ${symbol}: No real mapping (${data?.error || 'unknown'}), using mock`);
                 const strikeGap = STRIKE_GAPS[symbol] || Math.max(5, Math.floor(spotPrice * 0.01));
                 const atmStrike = Math.round(spotPrice / strikeGap) * strikeGap;
-                const expiries = ['WEEK1', 'WEEK2', 'MONTH1'];
-                expiries.forEach(expiry => {
+                ['WEEK1', 'WEEK2', 'MONTH1'].forEach(expiry => {
                     for (let i = -10; i <= 10; i++) {
                         const strike = atmStrike + (i * strikeGap);
                         marketData.push(createOptionObject(symbol, 'CE', strike, spotPrice, expiry));
@@ -243,13 +243,12 @@ async function generateInitialData() {
             }
         });
     } catch (err) {
-        console.warn('Backend mapping failed, using standard mock data.', err);
-        ALL_FNO_SYMBOLS.forEach(symbol => {
-            let spotPrice = requests.find(r => r.symbol === symbol).spotPrice;
+        console.warn('[App] Backend mapping failed, using mock data.', err);
+        selectedUniverse.forEach(symbol => {
+            const spotPrice = SmartApiService.getLiveSpot(symbol) || BASE_PRICES[symbol] || 1000;
             const strikeGap = STRIKE_GAPS[symbol] || Math.max(5, Math.floor(spotPrice * 0.01));
             const atmStrike = Math.round(spotPrice / strikeGap) * strikeGap;
-            const expiries = ['WEEK1', 'WEEK2', 'MONTH1'];
-            expiries.forEach(expiry => {
+            ['WEEK1', 'WEEK2', 'MONTH1'].forEach(expiry => {
                 for (let i = -10; i <= 10; i++) {
                     const strike = atmStrike + (i * strikeGap);
                     marketData.push(createOptionObject(symbol, 'CE', strike, spotPrice, expiry));
@@ -258,7 +257,7 @@ async function generateInitialData() {
             });
         });
     }
-    
+
     renderDashboard();
 }
 

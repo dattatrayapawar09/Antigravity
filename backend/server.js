@@ -155,28 +155,8 @@ app.post('/api/instruments/bulk-options', (req, res) => {
  * Key F&O instrument tokens for NIFTY, BANKNIFTY, and top stocks
  */
 app.get('/api/instruments/fno', (req, res) => {
-    const instruments = [
-        { exchange: 'NSE', tradingsymbol: 'NIFTY',      symboltoken: '26000' },
-        { exchange: 'NSE', tradingsymbol: 'BANKNIFTY',  symboltoken: '26009' },
-        { exchange: 'BSE', tradingsymbol: 'SENSEX',     symboltoken: '1' },
-        { exchange: 'NSE', tradingsymbol: 'FINNIFTY',   symboltoken: '26037' },
-        { exchange: 'NSE', tradingsymbol: 'MIDCPNIFTY', symboltoken: '26074' },
-        { exchange: 'NSE', tradingsymbol: 'RELIANCE',   symboltoken: '2885' },
-        { exchange: 'NSE', tradingsymbol: 'HDFCBANK',   symboltoken: '1333' },
-        { exchange: 'NSE', tradingsymbol: 'ICICIBANK',  symboltoken: '4963' },
-        { exchange: 'NSE', tradingsymbol: 'INFY',       symboltoken: '1594' },
-        { exchange: 'NSE', tradingsymbol: 'TCS',        symboltoken: '11536' },
-        { exchange: 'NSE', tradingsymbol: 'ITC',        symboltoken: '1660' },
-        { exchange: 'NSE', tradingsymbol: 'SBIN',       symboltoken: '3045' },
-        { exchange: 'NSE', tradingsymbol: 'BHARTIARTL', symboltoken: '10604' },
-        { exchange: 'NSE', tradingsymbol: 'KOTAKBANK',  symboltoken: '1922' },
-        { exchange: 'NSE', tradingsymbol: 'LT',         symboltoken: '11483' },
-        { exchange: 'NSE', tradingsymbol: 'AXISBANK',   symboltoken: '5900' },
-        { exchange: 'NSE', tradingsymbol: 'BAJFINANCE', symboltoken: '317' },
-        { exchange: 'NSE', tradingsymbol: 'MARUTI',     symboltoken: '10999' },
-        { exchange: 'NSE', tradingsymbol: 'ASIANPAINT', symboltoken: '236' },
-        { exchange: 'NSE', tradingsymbol: 'HINDUNILVR', symboltoken: '1394' },
-    ];
+    // Dynamically return all cash market tokens indexed from scrip master
+    const instruments = instrumentUtils.getAllCashTokens();
     res.json({ instruments });
 });
 
@@ -186,6 +166,59 @@ app.get('/api/instruments/fno', (req, res) => {
  */
 app.get('/api/instruments/status', (req, res) => {
     res.json(instrumentUtils.getCacheStatus());
+});
+
+/**
+ * POST /api/instruments/spot
+ * Body: { symbols: ['NIFTY','BANKNIFTY','RELIANCE',...] }
+ * Returns live spot prices { NIFTY: 24150, BANKNIFTY: 54200, ... }
+ * Batches requests to avoid SmartAPI 50-instrument limit.
+ */
+app.post('/api/instruments/spot', async (req, res) => {
+    const { symbols = [] } = req.body;
+    if (!symbols.length) return res.status(400).json({ error: 'symbols array required' });
+
+    // Build instrument list from cached scrip master tokens
+    const allTokens  = instrumentUtils.getAllCashTokens();
+    const tokenMap   = {};
+    allTokens.forEach(t => { tokenMap[t.tradingsymbol] = t; });
+
+    const requested = [];
+    symbols.forEach(sym => {
+        const resolved = instrumentUtils.resolveSymbol(sym);
+        const tok = tokenMap[resolved] || tokenMap[sym];
+        if (tok) requested.push({ ...tok, _appSym: sym });
+    });
+
+    const spotPrices = {};
+
+    if (!client.isTokenValid()) {
+        // Return empty — frontend will fall back to BASE_PRICES
+        return res.json({ connected: false, spotPrices });
+    }
+
+    // SmartAPI allows max 50 tokens per quote call — batch them
+    const BATCH = 50;
+    for (let i = 0; i < requested.length; i += BATCH) {
+        const batch = requested.slice(i, i + BATCH);
+        try {
+            const data = await client.getQuote(batch, 'LTP');
+            const fetched = data?.fetched || [];
+            fetched.forEach(item => {
+                const ltp = parseFloat(item.ltp);
+                if (!ltp) return;
+                // Match back to app symbol
+                const ts  = item.tradingSymbol;
+                const hit = batch.find(b => b.tradingsymbol === ts);
+                if (hit) spotPrices[hit._appSym] = ltp;
+            });
+        } catch (e) {
+            console.error('[Server] Spot price batch error:', e.message);
+        }
+    }
+
+    console.log(`[Server] Spot prices fetched: ${Object.keys(spotPrices).length}/${symbols.length}`);
+    res.json({ connected: true, spotPrices });
 });
 
 // --- Start ---

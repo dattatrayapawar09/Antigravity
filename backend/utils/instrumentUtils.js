@@ -10,6 +10,7 @@ const SCRIP_MASTER_URL = 'https://margincalculator.angelbroking.com/OpenAPI_File
 
 // In-memory cache
 let optionsCache = {};   // { underlying: { expiry: { strike: { CE: contract, PE: contract } } } }
+let cashTokens   = {};   // { underlying: { exchange, tradingsymbol, symboltoken } }
 let cacheLoaded  = false;
 let cacheLoadedAt = null;
 let totalOptionsIndexed = 0;
@@ -19,55 +20,33 @@ let totalOptionsIndexed = 0;
  * Map app symbol → scrip master `name` field.
  */
 const SYMBOL_MAP = {
-    // Old symbols that were delisted/renamed
     'TATAMOTORS': 'TATAPOWER',     // TATAMOTORS not in current NFO; use closest available
-    'M&MFIN':     'MFSL',          // M&MFIN not in current NFO
-    'MCDOWELL-N': 'UNITDSPR',      // United Spirits (McDowell's parent co)
-    'PVRINOX':    'PVR',           // Check if PVR or PVRINOX is in scrip master
-    'GMRINFRA':   'GMRAIRPORT',    // GMR Infrastructure restructured
-    'IPCALAB':    'IPCALAB',       // Keep same — may just be missing from current expiry
+    'M&MFIN':     'MFSL',          
+    'MCDOWELL-N': 'UNITDSPR',      
+    'PVRINOX':    'PVR',           
+    'GMRINFRA':   'GMRAIRPORT',    
+    'IPCALAB':    'IPCALAB',       
     'LTIM':       'LTIM',
     'LTTS':       'LTTS',
     'ACC':        'ACC',
     'BALKRISIND': 'BALKRISIND',
     'BALRAMCHIN': 'BALRAMCHIN',
-    // BFO stocks (listed under BSE F&O)
     'SENSEX':     'SENSEX',
 };
 
-/**
- * Resolve app symbol name to scrip master name.
- */
 function resolveSymbol(appSymbol) {
     if (!appSymbol) return appSymbol;
-    // Check explicit map first
     if (SYMBOL_MAP[appSymbol]) return SYMBOL_MAP[appSymbol];
-    // Otherwise return as-is
     return appSymbol;
 }
 
-/**
- * Normalize Angel One strike price.
- * Angel One stores strike * 100 in the JSON (e.g. "6300.00" stored as "630000.000000").
- * Actual NSE strike = rawStrike / 100.
- *
- * Verified correct for:
- * - NFO OPTIDX: NIFTY29DEC2631000CE → strike: 3100000.000000 → 31000 ✓
- * - NFO OPTSTK: EICHERMOT26MAY266300CE → strike: 630000.000000 → 6300 ✓
- * - BFO OPTIDX: SENSEX28JUN68000PE → strike: 6800000.000000 → 68000 ✓
- * - BFO OPTSTK: IOC26MAY135CE → strike: 13500.000000 → 135 ✓
- */
 function normalizeStrike(rawStrike) {
     if (!rawStrike) return 0;
     const val = parseFloat(rawStrike);
     if (isNaN(val)) return 0;
-    return Math.round((val / 100) * 100) / 100; // round to 2dp to avoid float errors
+    return Math.round((val / 100) * 100) / 100;
 }
 
-/**
- * Downloads and caches the full Angel One scrip master JSON.
- * Builds an O(1) lookup table indexed by: underlying → expiry → strike → CE/PE
- */
 async function fetchAndCacheScripMaster() {
     try {
         console.log('[InstrumentUtils] Fetching Angel One scrip master...');
@@ -78,21 +57,38 @@ async function fetchAndCacheScripMaster() {
             throw new Error('Scrip master response is not an array');
         }
 
-        console.log(`[InstrumentUtils] Downloaded ${data.length} instruments. Indexing F&O options...`);
+        console.log(`[InstrumentUtils] Downloaded ${data.length} instruments. Indexing...`);
 
         optionsCache = {};
+        cashTokens = {};
         totalOptionsIndexed = 0;
         const underlyingSet = new Set();
 
         for (const item of data) {
             const { exch_seg, instrumenttype, name, expiry, strike, symbol, token, lotsize } = item;
+            
+            if (!name || !symbol || !token) continue;
 
-            // Only index NFO and BFO options
+            // 1. Index Cash Tokens for Live Spot Prices
+            if ((exch_seg === 'NSE' || exch_seg === 'BSE') && (instrumenttype === 'EQ' || instrumenttype === 'AMXIDX')) {
+                // Prefer NSE over BSE if both exist
+                if (!cashTokens[name] || exch_seg === 'NSE') {
+                    cashTokens[name] = { exchange: exch_seg, tradingsymbol: symbol, symboltoken: token };
+                }
+                // Special handling for indices which might not have 'EQ'
+                continue;
+            }
+            if (exch_seg === 'NSE' && symbol === 'NIFTY') cashTokens['NIFTY'] = { exchange: 'NSE', tradingsymbol: 'NIFTY', symboltoken: '26000' };
+            if (exch_seg === 'NSE' && symbol === 'BANKNIFTY') cashTokens['BANKNIFTY'] = { exchange: 'NSE', tradingsymbol: 'BANKNIFTY', symboltoken: '26009' };
+            if (exch_seg === 'NSE' && symbol === 'FINNIFTY') cashTokens['FINNIFTY'] = { exchange: 'NSE', tradingsymbol: 'FINNIFTY', symboltoken: '26037' };
+            if (exch_seg === 'NSE' && symbol === 'MIDCPNIFTY') cashTokens['MIDCPNIFTY'] = { exchange: 'NSE', tradingsymbol: 'MIDCPNIFTY', symboltoken: '26074' };
+            if (exch_seg === 'BSE' && symbol === 'SENSEX') cashTokens['SENSEX'] = { exchange: 'BSE', tradingsymbol: 'SENSEX', symboltoken: '1' };
+
+            // 2. Index Options
             if (exch_seg !== 'NFO' && exch_seg !== 'BFO') continue;
             if (instrumenttype !== 'OPTIDX' && instrumenttype !== 'OPTSTK') continue;
-            if (!name || !expiry || !strike || !symbol || !token) continue;
+            if (!expiry || !strike) continue;
 
-            // Determine CE or PE from the symbol suffix
             const optionType = symbol.endsWith('CE') ? 'CE' : symbol.endsWith('PE') ? 'PE' : null;
             if (!optionType) continue;
 
@@ -116,9 +112,8 @@ async function fetchAndCacheScripMaster() {
 
         cacheLoaded  = true;
         cacheLoadedAt = new Date().toISOString();
-        console.log(`[InstrumentUtils] ✅ Indexed ${totalOptionsIndexed} options across ${underlyingSet.size} underlyings.`);
-        console.log(`[InstrumentUtils] Available underlyings: ${[...underlyingSet].sort().join(', ')}`);
-
+        console.log(`[InstrumentUtils] ✅ Indexed ${totalOptionsIndexed} options and ${Object.keys(cashTokens).length} cash tokens.`);
+        
     } catch (err) {
         console.error('[InstrumentUtils] ❌ Failed to fetch scrip master:', err.message);
     }
@@ -278,6 +273,10 @@ function generateOptionChainMapping(underlying, expiry, spotPrice, numStrikes = 
     };
 }
 
+function getAllCashTokens() {
+    return Object.values(cashTokens);
+}
+
 module.exports = {
     fetchAndCacheScripMaster,
     normalizeStrike,
@@ -286,4 +285,5 @@ module.exports = {
     getAvailableExpiries,
     generateOptionChainMapping,
     getCacheStatus,
+    getAllCashTokens,
 };
