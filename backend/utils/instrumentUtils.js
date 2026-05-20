@@ -125,8 +125,25 @@ async function fetchAndCacheScripMaster() {
             // ── 1. Cash market tokens (NSE_CM / BSE equity) ──────────────
             if ((exch_seg === 'NSE' || exch_seg === 'BSE') &&
                 (instrumenttype === 'EQ' || instrumenttype === 'AMXIDX' || instrumenttype === 'INDEX')) {
-                // Prefer NSE over BSE for the same stock
-                if (!cashTokens[name] || exch_seg === 'NSE') {
+                
+                const isExact = (symbol === name || symbol === `${name}-EQ`);
+                const existing = cashTokens[name];
+                let shouldUpdate = false;
+
+                if (!existing) {
+                    shouldUpdate = true;
+                } else {
+                    const existingIsExact = (existing.tradingsymbol === name || existing.tradingsymbol === `${name}-EQ`);
+                    if (isExact && !existingIsExact) {
+                        shouldUpdate = true;
+                    } else if (isExact && existingIsExact && exch_seg === 'NSE' && existing.exchange === 'BSE') {
+                        shouldUpdate = true; // Prefer NSE over BSE if both are exact
+                    } else if (!isExact && !existingIsExact && exch_seg === 'NSE' && existing.exchange === 'BSE') {
+                        shouldUpdate = true; // Prefer NSE over BSE
+                    }
+                }
+
+                if (shouldUpdate) {
                     cashTokens[name] = { exchange: exch_seg, tradingsymbol: symbol, symboltoken: token };
                 }
                 continue;
