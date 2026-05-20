@@ -5,7 +5,7 @@
  */
 
 const path = require('path');
-const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env') });
+const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env'), override: true });
 if (dotenvResult.error) {
     console.error('[DEBUG] dotenv load error:', dotenvResult.error);
 } else {
