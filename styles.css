@@ -366,3 +366,41 @@ tbody tr:hover { background-color: var(--bg-surface-hover); }
     color: var(--warning) !important; font-size: 0.85rem !important;
     margin-top: 0.5rem; margin-bottom: 0 !important;
 }
+
+/* ── Live Data Quality Indicators ─────────────────────────────────────────── */
+
+/* LTP cell when no live data has arrived yet (fetchedAt === null) */
+.ltp-pending {
+    color: var(--text-muted) !important;
+    font-style: italic;
+}
+
+/* LTP cell when data is stale (> 5 min old) */
+.ltp-stale {
+    color: var(--warning) !important;
+    position: relative;
+}
+.ltp-stale::after {
+    content: '⚠';
+    font-size: 0.65rem;
+    margin-left: 3px;
+    vertical-align: super;
+    opacity: 0.7;
+}
+
+/* ATM strike row highlight */
+tbody tr.atm-row td { background: rgba(59, 130, 246, 0.06); }
+tbody tr.atm-row:hover td { background: rgba(59, 130, 246, 0.12); }
+tbody tr.atm-row td:nth-child(4) { color: var(--info) !important; font-weight: 700 !important; }
+
+/* ── Loading Row ────────────────────────────────────────────────────────────── */
+.loading-row td {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-muted);
+    animation: pulse-text 1.5s ease-in-out infinite;
+}
+@keyframes pulse-text {
+    0%, 100% { opacity: 0.5; }
+    50%       { opacity: 1; }
+}
