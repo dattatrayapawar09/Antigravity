@@ -510,7 +510,7 @@ app.get('/api/instruments/fno', (req, res) => {
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', async () => {
     console.log(`\n🚀 AntiGravity Backend  →  http://localhost:${PORT}`);
     console.log('   GET  /api/health');
     console.log('   GET  /api/auth/status');
