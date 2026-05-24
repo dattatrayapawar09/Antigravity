@@ -258,35 +258,84 @@ async function generateInitialData() {
         });
     }
 
+    // Populate expiry filter with real Angel One expiry dates now that data is loaded
+    populateExpiryFilter();
     renderDashboard();
 }
 
+// ─── Populate Expiry Filter with real Angel One dates ─────────────────────────
+// Replaces the hardcoded WEEK1/WEEK2/MONTH1 options with actual dates from scrip master.
+// Called after generateInitialData() so real expiry dates are available in marketData.
+function populateExpiryFilter() {
+    const select = document.getElementById('filter-expiry');
+    if (!select || !marketData.length) return;
+
+    // Extract all unique real expiry dates present in current marketData
+    const expiries = [...new Set(marketData.map(d => d.expiry).filter(Boolean))];
+
+    // Sort chronologically
+    const MONTHS_IDX = { JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11 };
+    expiries.sort((a, b) => {
+        const parseExp = s => {
+            const m = s.match(/^(\d{2})([A-Z]{3})(\d{4})$/);
+            if (!m) return new Date(0);
+            return new Date(parseInt(m[3], 10), MONTHS_IDX[m[2]] ?? 0, parseInt(m[1], 10));
+        };
+        return parseExp(a) - parseExp(b);
+    });
+
+    const LABEL_NAMES = ['Current Week', 'Next Week', 'Month 1', 'Month 2', 'Month 3', 'Month 4'];
+    const currentVal = filters.expiry;
+
+    // Rebuild options: keep ALL + add real dates
+    select.innerHTML = '<option value="ALL">All Expiries</option>';
+    expiries.forEach((exp, i) => {
+        const opt = document.createElement('option');
+        opt.value       = exp;
+        opt.textContent = `${LABEL_NAMES[i] || `Expiry ${i + 1}`}: ${exp}`;
+        if (currentVal === exp) opt.selected = true;
+        select.appendChild(opt);
+    });
+
+    // If the current filter is a stale relative label (WEEK1 etc.), reset to ALL
+    const validValues = ['ALL', ...expiries];
+    if (!validValues.includes(currentVal)) {
+        filters.expiry = 'ALL';
+        select.value   = 'ALL';
+    }
+
+    console.log(`[App] Expiry filter updated with ${expiries.length} real dates: ${expiries.join(', ')}`);
+}
+
 function createOptionObjectWithToken(opt, spot) {
-    const { symbol, token, underlying, expiry, strike, type, exch_seg, lotsize } = opt;
-    // NOTE: LTP/OI/Volume are intentionally 0 here.
-    // fetchRealOptionLTP() will populate them with real Angel One data immediately after.
+    const { symbol, token, underlying, expiry, strike, rawStrike, type, exch_seg, lotsize } = opt;
+    // NOTE: price/OI/volume start at 0 — fetchRealOptionLTP() populates them immediately.
+    // strike is already normalized (Angel One raw / 100) from instrumentUtils.
+    // fetchedAt is null until first live data arrives (used for stale-data visual indicator).
     return {
-        id:           `${underlying}_${expiry}_${strike}_${type}`,
+        id:              `${underlying}_${expiry}_${strike}_${type}`,
         token,
-        realSymbol:   symbol,
+        realSymbol:      symbol,       // Full Angel One trading symbol e.g. "NIFTY29MAY2624500CE"
         exch_seg,
         lotsize,
-        symbol:       underlying,
+        symbol:          underlying,   // App-facing symbol e.g. "NIFTY"
         type,
-        strike,
+        strike,                        // Normalized strike (Angel One raw / 100)
+        rawStrike,                     // Angel One raw strike value
         spot,
-        expiry,
-        price:        0,
-        prevPrice:    0,
-        oi:           0,
-        prevOi:       0,
-        volume:       0,
-        avgVol:       0,
+        expiry,                        // Real Angel One expiry date e.g. "29MAY2026"
+        price:           0,
+        prevPrice:       0,
+        oi:              0,
+        prevOi:          0,
+        volume:          0,
+        avgVol:          0,            // Set on first real LTP fetch (volRatio guard handles 0)
         past5DaysVolume: [0, 0, 0, 0, 0],
-        iv:           0,
-        spread:       '0.00',
-        liveDataReady: false,
-        timestamp:    new Date().toLocaleTimeString('en-IN')
+        iv:              0,
+        spread:          '0.00',
+        liveDataReady:   false,
+        fetchedAt:       null,         // null until live data fetched; used for stale indicator
+        timestamp:       new Date().toLocaleTimeString('en-IN')
     };
 }
 
@@ -332,8 +381,11 @@ function createOptionObject(symbol, type, strike, spot, expiry) {
 function calculateMetrics(option) {
     const priceChg = option.price - option.prevPrice;
     const oiChg = option.oi - option.prevOi;
-    const oiChgPct = (oiChg / option.prevOi) * 100;
-    const volRatio = option.volume / option.avgVol;
+    const oiChgPct = option.prevOi > 0 ? (oiChg / option.prevOi) * 100 : 0;
+    // FIX: Guard against avgVol=0 for real Angel One contracts (no historical baseline yet).
+    // Fall back to current volume so volRatio = 1.0 (neutral signal) instead of Infinity.
+    const safeAvgVol = option.avgVol > 0 ? option.avgVol : Math.max(1, option.volume || 1);
+    const volRatio = option.volume / safeAvgVol;
     
     let signal = 'Neutral', signalClass = '', icon = '';
     
@@ -383,6 +435,7 @@ async function fetchRealOptionLTP() {
         tradingsymbol: d.realSymbol || '',
         underlying:   d.symbol,
         strike:       d.strike,
+        rawStrike:    d.rawStrike,
         type:         d.type,
         expiry:       d.expiry,
     }));
@@ -399,19 +452,33 @@ async function fetchRealOptionLTP() {
 
         let updated = 0;
         marketData = marketData.map(opt => {
-            const q = data.quotes[String(opt.token)];
+            // FIX: normalize token key — backend returns quotes keyed by trimmed string token
+            const tokKey = String(opt.token ?? '').trim();
+            const q = data.quotes[tokKey];
             if (!q || q.ltp === undefined) return opt;
             updated++;
+
+            const newLtp    = q.ltp !== undefined && q.ltp !== null ? parseFloat(q.ltp) : opt.price;
+            const closePrice = q.closePrice !== undefined && q.closePrice !== null ? parseFloat(q.closePrice) : opt.prevPrice;
+            const newOi     = q.oi !== undefined && q.oi !== null ? parseInt(q.oi, 10) : opt.oi;
+            const newVol    = q.volume !== undefined && q.volume !== null ? parseInt(q.volume, 10) : opt.volume;
+
+            // On first real data arrival, set avgVol = current volume as baseline
+            // so volRatio starts at 1.0 (neutral) instead of Infinity or 0
+            const newAvgVol = opt.liveDataReady ? opt.avgVol : Math.max(1, newVol);
+
             return {
                 ...opt,
-                prevPrice:     opt.liveDataReady ? opt.price : (q.closePrice || q.ltp),
-                price:         q.ltp,
-                prevOi:        opt.liveDataReady ? opt.oi : q.oi,
-                oi:            q.oi,
-                volume:        q.volume,
+                prevPrice:     opt.liveDataReady ? opt.price : closePrice,
+                price:         newLtp,
+                prevOi:        opt.liveDataReady ? opt.oi : newOi,
+                oi:            newOi,
+                volume:        newVol,
+                avgVol:        newAvgVol,
                 iv:            opt.iv || 0,
-                spread:        q.ltp > 0 ? (q.ltp * 0.005).toFixed(2) : '0.00',
+                spread:        newLtp > 0 ? (newLtp * 0.005).toFixed(2) : '0.00',
                 liveDataReady: true,
+                fetchedAt:     Date.now(),
                 timestamp:     new Date().toLocaleTimeString('en-IN', { hour12: false })
             };
         });
@@ -480,31 +547,37 @@ async function fetchLiveMarketTick() {
             
             if (data.connected && data.data && data.data.fetched) {
                 const quoteMap = {};
-                data.data.fetched.forEach(q => { quoteMap[q.symbolToken] = q; });
-                
+                // FIX: Angel One returns symbolToken (capital T) — store under both casings
+                data.data.fetched.forEach(q => {
+                    const k = String(q.symbolToken || q.symboltoken || '').trim();
+                    if (k) { quoteMap[k] = q; quoteMap[k.toLowerCase()] = q; }
+                });
+
                 marketData = marketData.map(opt => {
-                    if (opt.token && quoteMap[opt.token]) {
-                        const q = quoteMap[opt.token];
-                        hasUpdates = true;
-                        
-                        const newPrice = parseFloat(q.ltp) || opt.price;
-                        const prevPrice = parseFloat(q.closePrice) || opt.prevPrice;
-                        const newVol = parseInt(q.volume) || opt.volume;
-                        const newOi = parseInt(q.opnInterest) || opt.oi;
-                        
-                        const updatedOpt = {
-                            ...opt,
-                            prevPrice: prevPrice,
-                            price: newPrice,
-                            volume: newVol,
-                            oi: newOi,
-                            timestamp: new Date().toLocaleTimeString('en-IN', { hour12: false })
-                        };
-                        
-                        if(currentInsightId === updatedOpt.id) updateInsightsView(updatedOpt);
-                        return updatedOpt;
-                    }
-                    return opt;
+                    if (!opt.token) return opt;
+                    const tokKey = String(opt.token).trim();
+                    const q = quoteMap[tokKey] || quoteMap[tokKey.toLowerCase()];
+                    if (!q) return opt;
+
+                    hasUpdates = true;
+                    const newPrice  = q.ltp !== undefined && q.ltp !== null ? parseFloat(q.ltp) : opt.price;
+                    const prevPrice = q.closePrice !== undefined && q.closePrice !== null ? parseFloat(q.closePrice) : opt.prevPrice;
+                    const volVal    = q.tradeVolume !== undefined && q.tradeVolume !== null ? q.tradeVolume : q.volume;
+                    const newVol    = volVal !== undefined && volVal !== null ? parseInt(volVal, 10) : opt.volume;
+                    const newOi     = q.opnInterest !== undefined && q.opnInterest !== null ? parseInt(q.opnInterest, 10) : opt.oi;
+
+                    const updatedOpt = {
+                        ...opt,
+                        prevPrice,
+                        price:     newPrice,
+                        volume:    newVol,
+                        oi:        newOi,
+                        fetchedAt: Date.now(),
+                        timestamp: new Date().toLocaleTimeString('en-IN', { hour12: false })
+                    };
+
+                    if (currentInsightId === updatedOpt.id) updateInsightsView(updatedOpt);
+                    return updatedOpt;
                 });
             }
         } catch (err) {
@@ -574,18 +647,40 @@ function renderDashboard() {
     }
 
     let html = '';
+    const now = Date.now();
+    const STALE_MS = 5 * 60 * 1000; // 5 minutes
+
     processedData.forEach(d => {
         const oiChgColor = d.oiChgPct > 0 ? 'bullish' : 'bearish';
-        const strColor = d.strength > 80 ? 'warning' : (d.strength > 50 ? 'info' : 'text-muted');
-        
+        const strColor   = d.strength > 80 ? 'warning' : (d.strength > 50 ? 'info' : 'text-muted');
+
+        // Determine LTP cell CSS class based on data freshness
+        let ltpClass = 'font-mono';
+        if (!d.fetchedAt) {
+            ltpClass += ' ltp-pending';         // never fetched — show grayed italic
+        } else if (now - d.fetchedAt > STALE_MS) {
+            ltpClass += ' ltp-stale';           // data > 5 min old — show amber warning
+        }
+
+        // Highlight ATM row (nearest strike to current spot)
+        const liveSpot = SmartApiService.getLiveSpot(d.symbol) || d.spot || 0;
+        const isAtm    = d.liveDataReady && liveSpot > 0 &&
+                         Math.abs(d.strike - liveSpot) < (liveSpot * 0.005); // within 0.5%
+        const rowClass = isAtm ? ' class="atm-row"' : '';
+
+        // Format strike cleanly — remove trailing .00
+        const strikeDisplay = Number.isInteger(d.strike)
+            ? d.strike.toString()
+            : d.strike.toFixed(2).replace(/\.00$/, '');
+
         html += `
-            <tr onclick="openInsights('${d.id}')">
+            <tr${rowClass} onclick="openInsights('${d.id}')">
                 <td class="font-bold">${d.symbol}</td>
                 <td class="text-muted" style="font-size:0.7rem;">${d.expiry}</td>
                 <td><span class="type-badge type-${d.type.toLowerCase()}">${d.type}</span></td>
-                <td class="font-mono font-bold">${d.strike}</td>
-                <td class="font-mono text-muted">₹${d.spot.toFixed(2)}</td>
-                <td class="font-mono">₹${d.price.toFixed(2)}</td>
+                <td class="font-mono font-bold">${strikeDisplay}</td>
+                <td class="font-mono text-muted">₹${liveSpot.toFixed(2)}</td>
+                <td class="${ltpClass}" title="Token: ${d.token || 'N/A'} | ${d.realSymbol || ''}">₹${d.price.toFixed(2)}</td>
                 <td class="font-mono">${formatNumber(d.volume)}</td>
                 <td class="font-mono text-muted tooltip-container">
                     ${formatNumber(d.avgVol)}

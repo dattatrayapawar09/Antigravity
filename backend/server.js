@@ -1,6 +1,17 @@
 /**
  * AntiGravity — Angel One SmartAPI Proxy Backend
- * Provides auth, spot prices, option chain mapping, and live quote APIs.
+ * Provides auth, spot prices, option chain mapping, live quote APIs, and debug endpoints.
+ *
+ * FIXES APPLIED:
+ *  1. batchQuote() — stores result keyed by BOTH camelCase and lowercase token for safe lookup
+ *  2. /api/instruments/spot — token key lookup made case-insensitive + debug logging
+ *  3. /api/market/option-ltp — validates exchange segment (NFO only for options)
+ *  4. /api/debug/validate — new endpoint: prints full contract info vs live Angel One data
+ *  5. /api/debug/spot — new endpoint: validates spot price for a symbol
+ *  6. /api/debug/scrip — new endpoint: dumps indexed scrip data for an underlying
+ *  7. /api/debug/token-map — new endpoint: dumps token → contract reverse map (paginated)
+ *  8. All routes now log token, symbol, normalized strike, raw strike, LTP, spot
+ *
  * Run: node server.js   (from /backend directory)
  */
 
@@ -12,29 +23,29 @@ if (dotenvResult.error) {
     console.log('[Env] Loaded:', path.join(__dirname, '.env'));
 }
 
-const apiKey   = process.env.ANGEL_API_KEY    || '';
-const clientId = process.env.ANGEL_CLIENT_ID  || process.env.ANGEL_CLIENT_CODE || '';
-const password = process.env.ANGEL_PASSWORD   || '';
-const totpSec  = process.env.ANGEL_TOTP_SECRET|| '';
-const PORT     = parseInt(process.env.PORT)   || 3001;
+const apiKey   = process.env.ANGEL_API_KEY     || '';
+const clientId = process.env.ANGEL_CLIENT_ID   || process.env.ANGEL_CLIENT_CODE || '';
+const password = process.env.ANGEL_PASSWORD    || '';
+const totpSec  = process.env.ANGEL_TOTP_SECRET || '';
+const PORT     = parseInt(process.env.PORT, 10) || 3001;
 
-console.log('[Env] ANGEL_API_KEY     :', apiKey    ? `${apiKey.slice(0,4)}****` : 'MISSING ⚠️');
-console.log('[Env] ANGEL_CLIENT_ID   :', clientId  ? clientId                  : 'MISSING ⚠️');
-console.log('[Env] ANGEL_PASSWORD    :', password  ? '****'                    : 'MISSING ⚠️');
-console.log('[Env] ANGEL_TOTP_SECRET :', totpSec   ? `${totpSec.slice(0,4)}****` : 'MISSING ⚠️');
+console.log('[Env] ANGEL_API_KEY     :', apiKey    ? `${apiKey.slice(0,4)}****`    : 'MISSING ⚠️');
+console.log('[Env] ANGEL_CLIENT_ID   :', clientId  ? clientId                      : 'MISSING ⚠️');
+console.log('[Env] ANGEL_PASSWORD    :', password  ? '****'                         : 'MISSING ⚠️');
+console.log('[Env] ANGEL_TOTP_SECRET :', totpSec   ? `${totpSec.slice(0,4)}****`   : 'MISSING ⚠️');
 
 const express         = require('express');
 const cors            = require('cors');
 const SmartAPI        = require('./smartapi');
 const instrumentUtils = require('./utils/instrumentUtils');
 
-const app    = express();
+const app = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 const client = new SmartAPI({ apiKey, clientId, password, totpSecret: totpSec });
 
-// ─── Auto-login ──────────────────────────────────────────────────────────────
+// ─── Auto-login ───────────────────────────────────────────────────────────────
 async function autoLogin() {
     const result = await client.login();
     if (result.success) {
@@ -44,26 +55,47 @@ async function autoLogin() {
     }
 }
 
+// ─── Helper: Normalize token string for safe map lookup ──────────────────────
+// Angel One's quote API returns "symbolToken" (capital T), but internally
+// we may receive strings or numbers. Always store and look up as trimmed strings.
+function tokenKey(t) {
+    return String(t ?? '').trim();
+}
+
 // ─── Helper: Batch Quote Fetch ────────────────────────────────────────────────
-// SmartAPI allows max 50 tokens per call. Groups by exchange for the API.
+// SmartAPI allows max 50 tokens per call. Groups instruments by exchange.
+// FIX: stores results keyed by BOTH q.symbolToken AND q.symboltoken so that
+//      downstream lookups succeed regardless of casing.
 async function batchQuote(instruments, mode = 'LTP') {
     const BATCH = 50;
     const results = {};
+
     for (let i = 0; i < instruments.length; i += BATCH) {
         const batch = instruments.slice(i, i + BATCH);
         try {
             const data = await client.getQuote(batch, mode);
-            if (!data) { console.warn('[Server] batchQuote: null response from getQuote'); continue; }
-            const fetched = data.fetched || [];
-            if (i === 0) {
-                console.log(`[Server] batchQuote sample response key: ${fetched[0] ? JSON.stringify(Object.keys(fetched[0])) : 'empty'}`);
+            if (!data) {
+                console.warn('[Server] batchQuote: null response from getQuote');
+                continue;
             }
+            const fetched = data.fetched || [];
+
+            if (i === 0 && fetched.length > 0) {
+                console.log(`[Server] batchQuote response fields: ${JSON.stringify(Object.keys(fetched[0]))}`);
+            }
+
             fetched.forEach(q => {
-                // Angel One response uses 'symbolToken' (camelCase with capital T)
-                const key = String(q.symbolToken || q.symboltoken || q.token || '');
-                if (key) results[key] = q;
+                // Angel One returns symbolToken (capital T) in market quote response
+                // Store under all known key variants to prevent case-mismatch misses
+                const tok = tokenKey(q.symbolToken ?? q.symboltoken ?? q.token);
+                if (tok) {
+                    results[tok] = q;
+                    // Also store under lowercase variant
+                    results[tok.toLowerCase()] = q;
+                }
             });
-            console.log(`[Server] batchQuote batch ${Math.floor(i/BATCH)+1}: ${fetched.length} filled of ${batch.length} requested`);
+
+            console.log(`[Server] batchQuote batch ${Math.floor(i / BATCH) + 1}: ${fetched.length} filled of ${batch.length} requested`);
         } catch (e) {
             console.error('[Server] batchQuote error:', e.message);
         }
@@ -71,11 +103,14 @@ async function batchQuote(instruments, mode = 'LTP') {
     return results;
 }
 
-
-// ─── Routes ──────────────────────────────────────────────────────────────────
+// ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString(), mode: client.isTokenValid() ? 'LIVE' : 'MOCK' });
+    res.json({
+        status:    'ok',
+        timestamp: new Date().toISOString(),
+        mode:      client.isTokenValid() ? 'LIVE' : 'MOCK',
+    });
 });
 
 app.get('/api/auth/status', (req, res) => {
@@ -102,7 +137,7 @@ app.post('/api/market/quote', async (req, res) => {
     res.json({ connected: true, data });
 });
 
-// ─── Option chain (Angel One native) ─────────────────────────────────────────
+// ─── Option chain (Angel One native API) ─────────────────────────────────────
 app.post('/api/market/optionchain', async (req, res) => {
     const { symbol, expiryDate, strikePrice } = req.body;
     if (!client.isTokenValid()) return res.json({ connected: false, data: null });
@@ -121,7 +156,7 @@ app.get('/api/instruments/options', (req, res) => {
     if (!symbol)    return res.status(400).json({ error: 'symbol required' });
     if (!spotPrice) return res.status(400).json({ error: 'spotPrice required' });
     const mapping = instrumentUtils.generateOptionChainMapping(
-        symbol, expiry, parseFloat(spotPrice), numStrikes ? parseInt(numStrikes) : 10
+        symbol, expiry, parseFloat(spotPrice), numStrikes ? parseInt(numStrikes, 10) : 10
     );
     if (mapping.error) return res.status(404).json(mapping);
     res.json(mapping);
@@ -135,7 +170,7 @@ app.post('/api/instruments/bulk-options', (req, res) => {
     for (const r of requests) {
         if (!r.symbol || !r.spotPrice) continue;
         results[r.symbol] = instrumentUtils.generateOptionChainMapping(
-            r.symbol, r.expiry, parseFloat(r.spotPrice), numStrikes ? parseInt(numStrikes) : 10
+            r.symbol, r.expiry, parseFloat(r.spotPrice), numStrikes ? parseInt(numStrikes, 10) : 10
         );
     }
     res.json(results);
@@ -143,8 +178,11 @@ app.post('/api/instruments/bulk-options', (req, res) => {
 
 // ─── Live Spot Prices ─────────────────────────────────────────────────────────
 // POST /api/instruments/spot
-// Body: { symbols: ['NIFTY','BANKNIFTY','RELIANCE',...] }
-// Returns: { connected, spotPrices: { NIFTY: 24150, BANKNIFTY: 54200, ... } }
+// Body: { symbols: ['NIFTY','BANKNIFTY','RELIANCE'] }
+// Returns: { connected, spotPrices: { NIFTY: 24500, BANKNIFTY: 53000, ... } }
+//
+// FIX: token key lookup is now case-insensitive (uses tokenKey() helper)
+// FIX: detailed per-instrument debug logging comparing expected token vs response
 app.post('/api/instruments/spot', async (req, res) => {
     const { symbols = [] } = req.body;
     if (!symbols.length) return res.status(400).json({ error: 'symbols array required' });
@@ -161,23 +199,46 @@ app.post('/api/instruments/spot', async (req, res) => {
     for (const sym of symbols) {
         const tok = instrumentUtils.getCashToken(sym);
         if (tok) {
-            instruments.push({ ...tok, _appSym: sym });
+            let exch = tok.exchange;
+            // Spot prices must be fetched from NSE_CM per requirements
+            if (exch === 'NSE') exch = 'NSE_CM';
+            instruments.push({ ...tok, exchange: exch, _appSym: sym });
+            console.log(`[Server] /spot — ${sym} → exchange=${exch} tradingsym=${tok.tradingsymbol} token=${tok.symboltoken}`);
         } else {
-            console.warn(`[Server] /spot — no cash token for: ${sym}`);
+            console.warn(`[Server] /spot — ⚠️  no cash token for: ${sym} (not in scrip master)`);
         }
+    }
+
+    if (!instruments.length) {
+        console.warn('[Server] /spot — no instruments resolved, returning empty');
+        return res.json({ connected: true, spotPrices });
     }
 
     console.log(`[Server] /spot — fetching LTP for ${instruments.length}/${symbols.length} symbols`);
     const quoteMap = await batchQuote(instruments, 'LTP');
+    console.log(`[Server] /spot — quoteMap has ${Object.keys(quoteMap).length / 2} unique entries`);
 
     for (const instr of instruments) {
-        const q = quoteMap[String(instr.symboltoken)];
-        if (q && q.ltp) {
+        const lookupKey = tokenKey(instr.symboltoken);
+        const q = quoteMap[lookupKey] || quoteMap[lookupKey.toLowerCase()];
+
+        if (q && (q.ltp !== undefined && q.ltp !== null)) {
             const ltp = parseFloat(q.ltp);
-            spotPrices[instr._appSym] = ltp;
-            console.log(`[Server] Spot: ${instr._appSym} (${instr.exchange}:${instr.tradingsymbol} token=${instr.symboltoken}) = ₹${ltp}`);
+            if (!isNaN(ltp) && ltp > 0) {
+                spotPrices[instr._appSym] = ltp;
+                console.log(
+                    `[Server] ✅ Spot: ${instr._appSym} (${instr.exchange}:${instr.tradingsymbol}` +
+                    ` token=${instr.symboltoken}) = ₹${ltp}`
+                );
+            } else {
+                console.warn(`[Server] ⚠️  Spot: ${instr._appSym} token=${instr.symboltoken} — ltp=${q.ltp} (zero/invalid)`);
+            }
         } else {
-            console.warn(`[Server] Spot miss: ${instr._appSym} token=${instr.symboltoken} — no LTP in response`);
+            console.warn(
+                `[Server] ⚠️  Spot miss: ${instr._appSym} token=${instr.symboltoken}` +
+                ` — key "${lookupKey}" not in quoteMap. ` +
+                `Available keys (first 5): ${Object.keys(quoteMap).slice(0, 5).join(', ')}`
+            );
         }
     }
 
@@ -189,6 +250,9 @@ app.post('/api/instruments/spot', async (req, res) => {
 // POST /api/market/option-ltp
 // Body: { contracts: [{token, exchange, tradingsymbol, underlying, strike, type, expiry}] }
 // Returns: { connected, quotes: { token: {ltp, oi, volume, closePrice, netChange, pctChange} } }
+//
+// FIX: validates that option contracts use NFO/BFO exchange segment, not NSE/BSE
+// FIX: detailed debug logging per contract
 app.post('/api/market/option-ltp', async (req, res) => {
     const { contracts = [] } = req.body;
     if (!contracts.length) return res.status(400).json({ error: 'contracts array required' });
@@ -197,53 +261,247 @@ app.post('/api/market/option-ltp', async (req, res) => {
         return res.json({ connected: false, quotes: {} });
     }
 
-    // Map contracts to instrument format needed by SmartAPI
-    const instruments = contracts.map(c => ({
-        exchange:      c.exch_seg || c.exchange || 'NFO',
-        symboltoken:   String(c.token),
-        tradingsymbol: c.tradingsymbol || c.symbol || '',
-    }));
+    // Validate and map contracts to instrument format needed by SmartAPI
+    // FIX: Options MUST use NFO (or BFO for Bombay derivatives) — never NSE/BSE
+    const instruments = contracts.map(c => {
+        const exchSeg = c.exch_seg || c.exchange || 'NFO';
+        // Options must be fetched from NFO
+        const correctedExch = (exchSeg === 'NSE' || exchSeg === 'BSE' || exchSeg === 'NSE_CM') ? 'NFO' : exchSeg;
+        if (correctedExch !== exchSeg) {
+            console.warn(`[Server] /option-ltp — Corrected exchange ${exchSeg} → ${correctedExch} for token=${c.token} (${c.underlying} ${c.strike}${c.type})`);
+        }
+        return {
+            exchange:      correctedExch,
+            symboltoken:   tokenKey(c.token),
+            tradingsymbol: c.tradingsymbol || c.symbol || '',
+        };
+    });
 
     console.log(`[Server] /option-ltp — fetching FULL quote for ${instruments.length} contracts`);
     const quoteMap = await batchQuote(instruments, 'FULL');
+    console.log(`[Server] /option-ltp — quoteMap has ${Object.keys(quoteMap).length / 2} unique entries`);
 
     const quotes = {};
+    let hits = 0, misses = 0;
+
     for (const c of contracts) {
-        const key = String(c.token);
-        const q   = quoteMap[key];
+        const key    = tokenKey(c.token);
+        const q      = quoteMap[key] || quoteMap[key.toLowerCase()];
+
         if (q) {
+            const ltp    = parseFloat(q.ltp)            || 0;
+            const close  = parseFloat(q.closePrice)     || 0;
+            const oi     = parseInt(q.opnInterest, 10)  || 0;
+            const volume = parseInt(q.tradeVolume ?? q.volume, 10) || 0;
+
             quotes[key] = {
-                ltp:        parseFloat(q.ltp)          || 0,
-                closePrice: parseFloat(q.closePrice)   || 0,
-                oi:         parseInt(q.opnInterest)    || 0,
-                volume:     parseInt(q.tradeVolume || q.volume) || 0,
-                open:       parseFloat(q.open)         || 0,
-                high:       parseFloat(q.high)         || 0,
-                low:        parseFloat(q.low)          || 0,
-                netChange:  parseFloat(q.netChange)    || 0,
-                pctChange:  parseFloat(q.percentChange)|| 0,
+                ltp,
+                closePrice: close,
+                oi,
+                volume,
+                open:       parseFloat(q.open)          || 0,
+                high:       parseFloat(q.high)          || 0,
+                low:        parseFloat(q.low)           || 0,
+                netChange:  parseFloat(q.netChange)     || 0,
+                pctChange:  parseFloat(q.percentChange) || 0,
             };
-            console.log(`[Server] Option LTP: ${c.underlying} ${c.expiry} ${c.strike} ${c.type} (${key}) → ₹${quotes[key].ltp} OI=${quotes[key].oi} Vol=${quotes[key].volume}`);
+
+            console.log(
+                `[Server] ✅ Option LTP: token=${key} sym=${c.tradingsymbol} ` +
+                `normStrike=${c.strike} rawStrike=${c.rawStrike || 'N/A'} ` +
+                `expiry=${c.expiry || ''} type=${c.type} ` +
+                `→ LTP=₹${ltp} OI=${oi} Vol=${volume} Close=₹${close}`
+            );
+            hits++;
         } else {
-            console.warn(`[Server] Option LTP miss: token=${key} (${c.underlying} ${c.strike}${c.type})`);
+            console.warn(
+                `[Server] ⚠️  Option LTP miss: token=${key}` +
+                ` (${c.underlying || ''} ${c.strike || ''}${c.type || ''} ${c.expiry || ''})`
+            );
+            misses++;
         }
     }
 
-    console.log(`[Server] /option-ltp — ${Object.keys(quotes).length}/${contracts.length} filled`);
+    console.log(`[Server] /option-ltp — ${hits} hits, ${misses} misses out of ${contracts.length} contracts`);
     res.json({ connected: true, quotes });
 });
 
-// ─── Debug: inspect a single option contract ─────────────────────────────────
+// ─── Debug: inspect a single option contract ──────────────────────────────────
+// GET /api/debug/option?symbol=NIFTY&strike=24500&type=CE&expiry=29MAY2026
 app.get('/api/debug/option', (req, res) => {
     const { symbol, strike, type, expiry } = req.query;
-    if (!symbol || !strike || !type) return res.status(400).json({ error: 'symbol, strike, type required' });
-    const contract = instrumentUtils.mapInstrumentToken(symbol, expiry, parseFloat(strike), type);
-    res.json({
-        queried: { symbol, strike: parseFloat(strike), type, expiry },
-        result:  contract,
+    if (!symbol || !strike || !type) {
+        return res.status(400).json({ error: 'symbol, strike, type required' });
+    }
+    const debugInfo = instrumentUtils.getContractDebugInfo(
+        symbol, expiry, parseFloat(strike), type?.toUpperCase()
+    );
+    res.json(debugInfo);
+});
+
+// ─── Debug: validate a contract with live Angel One data ─────────────────────
+// GET /api/debug/validate?symbol=NIFTY&strike=24500&type=CE&expiry=29MAY2026
+app.get('/api/debug/validate', async (req, res) => {
+    const { symbol, strike, type, expiry } = req.query;
+    if (!symbol || !strike || !type) {
+        return res.status(400).json({ error: 'symbol, strike, type required' });
+    }
+
+    const strikeNum  = parseFloat(strike);
+    const typeUpper  = type.toUpperCase();
+    const debugInfo  = instrumentUtils.getContractDebugInfo(symbol, expiry, strikeNum, typeUpper);
+    const contract   = debugInfo.contract;
+
+    let liveData = null;
+    let spotData = null;
+
+    if (client.isTokenValid() && contract) {
+        console.log(`[Server] /debug/validate — fetching live data for token=${contract.token}`);
+
+        // Fetch live option LTP
+        const optInstr = [{
+            exchange:      contract.exch_seg,
+            symboltoken:   tokenKey(contract.token),
+            tradingsymbol: contract.symbol,
+        }];
+        const quoteMap = await batchQuote(optInstr, 'FULL');
+        const q        = quoteMap[tokenKey(contract.token)];
+        if (q) {
+            liveData = {
+                ltp:       parseFloat(q.ltp)           || 0,
+                closePrice: parseFloat(q.closePrice)   || 0,
+                oi:        parseInt(q.opnInterest, 10) || 0,
+                volume:    parseInt(q.tradeVolume ?? q.volume, 10) || 0,
+                open:      parseFloat(q.open)          || 0,
+                high:      parseFloat(q.high)          || 0,
+                low:       parseFloat(q.low)           || 0,
+            };
+        }
+
+        // Fetch spot price
+        const cashTok = instrumentUtils.getCashToken(symbol);
+        if (cashTok) {
+            const spotMap = await batchQuote([cashTok], 'LTP');
+            const sq      = spotMap[tokenKey(cashTok.symboltoken)];
+            if (sq) spotData = parseFloat(sq.ltp) || null;
+        }
+    }
+
+    const response = {
+        queried: { symbol, strike: strikeNum, type: typeUpper, expiry: expiry || 'auto' },
         resolved: instrumentUtils.resolveSymbol(symbol),
-        expiries: instrumentUtils.getAvailableExpiries(symbol),
+        ...debugInfo,
+        liveData,
+        spotPrice: spotData,
+        mode: client.isTokenValid() ? 'LIVE' : 'MOCK (not connected)',
+    };
+
+    // Pretty console log for comparison with Angel One terminal
+    console.log('\n[Server] ══════════ DEBUG VALIDATION ══════════');
+    console.log(`  Symbol       : ${symbol} (resolved: ${response.resolved})`);
+    console.log(`  Strike       : ${strikeNum} (raw in scrip master: ${contract?.rawStrike || 'N/A'})`);
+    console.log(`  Type         : ${typeUpper}`);
+    console.log(`  Expiry       : ${debugInfo.targetExpiry || 'N/A'}`);
+    console.log(`  Token        : ${contract?.token || 'NOT FOUND'}`);
+    console.log(`  Trading Sym  : ${contract?.symbol || 'NOT FOUND'}`);
+    console.log(`  Exchange     : ${contract?.exch_seg || 'N/A'}`);
+    console.log(`  Spot Price   : ${spotData != null ? '₹' + spotData : 'N/A'}`);
+    if (liveData) {
+        console.log(`  Live LTP     : ₹${liveData.ltp}`);
+        console.log(`  OI           : ${liveData.oi}`);
+        console.log(`  Volume       : ${liveData.volume}`);
+        console.log(`  Day Range    : ₹${liveData.low} – ₹${liveData.high}`);
+    } else {
+        console.log('  Live data    : N/A (not connected or token not found)');
+    }
+    console.log('[Server] ════════════════════════════════════════\n');
+
+    res.json(response);
+});
+
+// ─── Debug: validate spot price for a symbol ─────────────────────────────────
+// GET /api/debug/spot?symbol=NIFTY
+app.get('/api/debug/spot', async (req, res) => {
+    const { symbol } = req.query;
+    if (!symbol) return res.status(400).json({ error: 'symbol required' });
+
+    const cashTok = instrumentUtils.getCashToken(symbol);
+    let liveSpot  = null;
+    let quoteRaw  = null;
+
+    if (client.isTokenValid() && cashTok) {
+        const spotMap = await batchQuote([cashTok], 'LTP');
+        const key     = tokenKey(cashTok.symboltoken);
+        const q       = spotMap[key] || spotMap[key.toLowerCase()];
+        quoteRaw = q || null;
+        liveSpot = q ? (parseFloat(q.ltp) || null) : null;
+    }
+
+    console.log(`[Server] /debug/spot: ${symbol} → token=${cashTok?.symboltoken || 'NOT FOUND'} spot=₹${liveSpot}`);
+
+    res.json({
+        symbol,
+        resolved:     instrumentUtils.resolveSymbol(symbol),
+        cashToken:    cashTok,
+        liveSpot,
+        quoteRaw,
+        mode:         client.isTokenValid() ? 'LIVE' : 'MOCK',
     });
+});
+
+// ─── Debug: dump indexed scrip data for an underlying ────────────────────────
+// GET /api/debug/scrip?underlying=NIFTY&expiry=29MAY2026
+app.get('/api/debug/scrip', (req, res) => {
+    const { underlying, expiry } = req.query;
+    if (!underlying) return res.status(400).json({ error: 'underlying required' });
+
+    const resolved  = instrumentUtils.resolveSymbol(underlying);
+    const cache     = instrumentUtils._optionsCache();
+    const uCache    = cache[resolved] || cache[underlying];
+
+    if (!uCache) {
+        return res.status(404).json({ error: `${underlying} not in scrip master cache`, resolved });
+    }
+
+    const expiries  = instrumentUtils.getAvailableExpiries(underlying);
+    const target    = expiry && expiries.includes(expiry) ? expiry : expiries[0];
+
+    const strikesObj = uCache[target] || {};
+    const strikeSummary = {};
+    for (const [s, d] of Object.entries(strikesObj)) {
+        strikeSummary[s] = {
+            CE: d.CE ? { token: d.CE.token, sym: d.CE.symbol, rawStrike: d.CE.rawStrike } : null,
+            PE: d.PE ? { token: d.PE.token, sym: d.PE.symbol, rawStrike: d.PE.rawStrike } : null,
+        };
+    }
+
+    res.json({
+        underlying,
+        resolved,
+        expiries,
+        targetExpiry: target,
+        strikeCount:  Object.keys(strikeSummary).length,
+        strikes:      strikeSummary,
+    });
+});
+
+// ─── Debug: token → contract reverse map (paginated) ─────────────────────────
+// GET /api/debug/token-map?token=35000   OR   /api/debug/token-map?limit=50&offset=0
+app.get('/api/debug/token-map', (req, res) => {
+    const { token, limit = 50, offset = 0 } = req.query;
+    const map = instrumentUtils._tokenToContract();
+
+    if (token) {
+        const contract = map[tokenKey(token)];
+        return res.json({ token, contract: contract || null });
+    }
+
+    const keys    = Object.keys(map);
+    const page    = keys.slice(parseInt(offset, 10), parseInt(offset, 10) + parseInt(limit, 10));
+    const partial = {};
+    for (const k of page) partial[k] = map[k];
+
+    res.json({ total: keys.length, offset: parseInt(offset, 10), limit: parseInt(limit, 10), map: partial });
 });
 
 // ─── FNO instruments list (dynamic from scrip master) ────────────────────────
@@ -251,7 +509,7 @@ app.get('/api/instruments/fno', (req, res) => {
     res.json({ instruments: instrumentUtils.getAllCashTokens() });
 });
 
-// ─── Start ───────────────────────────────────────────────────────────────────
+// ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, async () => {
     console.log(`\n🚀 AntiGravity Backend  →  http://localhost:${PORT}`);
     console.log('   GET  /api/health');
@@ -262,9 +520,13 @@ app.listen(PORT, async () => {
     console.log('   POST /api/instruments/spot');
     console.log('   POST /api/instruments/bulk-options');
     console.log('   GET  /api/instruments/status');
-    console.log('   GET  /api/debug/option?symbol=NIFTY&strike=24500&type=CE\n');
+    console.log('   GET  /api/debug/option?symbol=NIFTY&strike=24500&type=CE');
+    console.log('   GET  /api/debug/validate?symbol=NIFTY&strike=24500&type=CE&expiry=29MAY2026');
+    console.log('   GET  /api/debug/spot?symbol=NIFTY');
+    console.log('   GET  /api/debug/scrip?underlying=NIFTY');
+    console.log('   GET  /api/debug/token-map?token=35000\n');
 
-    // Load scrip master first (takes ~10s), then login
+    // Load scrip master first (~10s), then login
     await instrumentUtils.fetchAndCacheScripMaster();
     setInterval(instrumentUtils.fetchAndCacheScripMaster, 24 * 60 * 60 * 1000); // daily refresh
 
