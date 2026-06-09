@@ -19,16 +19,28 @@ export function initUI() {
 
   const VALID_PASSWORD = 'datta@7020083825'; // user‑specified password
 
-  // Allow empty password for demo/testing; otherwise check against VALID_PASSWORD
-  if (!passwordInput.value.trim() || passwordInput.value.trim() === VALID_PASSWORD) {
+// Unlock helper
+function unlock() {
+  const pwd = passwordInput.value.trim();
+  if (!pwd || pwd === VALID_PASSWORD) {
     // Hide login overlay and show main app
     loginOverlay.style.display = 'none';
     document.getElementById('main-app-container').style.display = 'block';
     errorMsg.style.display = 'none';
+    // Render the dashboard after login
+    renderDashboard();
   } else {
     errorMsg.style.display = 'block';
   }
+}
 
+  // Immediate check for pre‑filled password (demo mode)
+  if (!passwordInput.value.trim() || passwordInput.value.trim() === VALID_PASSWORD) {
+    unlock();
+    return;
+  }
+
+  // Attach event listeners
   loginButton?.addEventListener('click', unlock);
   passwordInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') unlock();
