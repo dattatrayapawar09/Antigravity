@@ -273,7 +273,7 @@ function setupUniverseSelector() {
                     div.classList.add('selected');
                 }
                 updateTriggerLabel();
-                renderDashboard();
+                refreshMarketData(); // Immediately fetch the new universe
             });
             optsCont.appendChild(div);
         });
@@ -303,14 +303,14 @@ function setupUniverseSelector() {
         state.selectedUniverse = [...allSyms];
         renderOptions(searchIn?.value || '');
         updateTriggerLabel();
-        renderDashboard();
+        refreshMarketData();
     });
     document.getElementById('btn-clear-all')?.addEventListener('click', e => {
         e.stopPropagation();
-        state.selectedUniverse = [...allSyms]; // show all when none selected
+        state.selectedUniverse = [];
         renderOptions(searchIn?.value || '');
         updateTriggerLabel();
-        renderDashboard();
+        refreshMarketData();
     });
 
     renderOptions();
@@ -448,7 +448,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     setupTabs();
     setupUniverseSelector();
     setupSettingsModal();
-    initFilters(renderDashboard);
+    initFilters(renderDashboard, refreshMarketData);
 
     // Set default universe (all symbols)
     state.selectedUniverse = [...INDEX_SYMBOLS, ...STOCK_SYMBOLS];

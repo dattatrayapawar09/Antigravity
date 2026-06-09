@@ -2,61 +2,63 @@
 
 import { state } from './state.js';
 
-export function initFilters() {
-    // Vol ratio filter
+/**
+ * Setup filter UI event listeners.
+ * @param {Function} onFrontendFilterChange - callback for client-side filtering
+ * @param {Function} onBackendFilterChange - callback for filters that require re-fetching
+ */
+export function initFilters(onFrontendFilterChange, onBackendFilterChange) {
     const volInput = document.getElementById('filter-vol-ratio');
-    if (volInput) {
-        volInput.addEventListener('input', () => {
-            state.filters.volRatio = parseFloat(volInput.value) || 1.0;
-        });
-    }
+    volInput?.addEventListener('input', () => {
+        state.filters.volRatio = parseFloat(volInput.value) || 0;
+        onFrontendFilterChange?.();
+    });
 
-    // OI change filter
     const oiInput = document.getElementById('filter-oi-chg');
-    if (oiInput) {
-        oiInput.addEventListener('input', () => {
-            state.filters.oiChg = parseFloat(oiInput.value) || 0;
-        });
-    }
+    oiInput?.addEventListener('input', () => {
+        state.filters.oiChg = parseFloat(oiInput.value) || 0;
+        onFrontendFilterChange?.();
+    });
 
-    // CE/PE/ALL toggle
     const toggleBtns = document.querySelectorAll('.toggle-btn');
     toggleBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             toggleBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             state.filters.type = btn.dataset.val || 'ALL';
+            onFrontendFilterChange?.();
         });
     });
 
-    // Expiry filter
     const expirySelect = document.getElementById('filter-expiry');
-    if (expirySelect) {
-        expirySelect.addEventListener('change', () => {
-            state.filters.expiry = expirySelect.value;
-        });
-    }
+    expirySelect?.addEventListener('change', () => {
+        state.filters.expiry = expirySelect.value;
+        onBackendFilterChange?.();
+    });
 }
 
+/**
+ * Apply active filters to a processed data array.
+ */
 export function applyFilters(data) {
     return data.filter(d => {
-        // If no universe selected, show all
+        // Universe filter — skip if empty (show all)
         if (
             state.selectedUniverse.length > 0 &&
             !state.selectedUniverse.includes(d.symbol)
         ) return false;
 
+        // Vol ratio
         if (d.volRatio < (state.filters.volRatio || 0)) return false;
 
-        if (
-            state.filters.type !== 'ALL' &&
-            d.type !== state.filters.type
-        ) return false;
+        // OI change %
+        if (Math.abs(d.oiChgPct) < (state.filters.oiChg || 0)) return false;
 
-        if (
-            state.filters.expiry !== 'ALL' &&
-            d.expiry !== state.filters.expiry
-        ) return false;
+        // CE/PE type
+        if (state.filters.type !== 'ALL' && d.type !== state.filters.type) return false;
+
+        // Expiry
+        if (state.filters.expiry !== 'ALL' && d.expiry !== state.filters.expiry) return false;
 
         return true;
     });

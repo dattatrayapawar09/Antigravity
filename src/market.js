@@ -61,14 +61,48 @@ async function fetchAvgVolumes(symbols) {
  */
 export async function generateInitialData() {
     if (state.apiConnected) {
-        // Live Mode: Fetch from backend endpoint (returns exact mapping, strike, spot, and LTP)
-        const liveOptions = await SmartApiService.fetchOptionChain(state.selectedUniverse);
+        if (state.selectedUniverse.length === 0) {
+            state.marketData = [];
+            return;
+        }
+
+        const expiryToFetch = state.filters.expiry === 'ALL' ? null : state.filters.expiry;
+
+        // Live Mode: Fetch from backend endpoint
+        const response = await SmartApiService.fetchOptionChain(state.selectedUniverse, expiryToFetch);
         
-        if (liveOptions && liveOptions.length > 0) {
+        if (response && response.options) {
+            const { options: liveOptions, expiries } = response;
+            
+            // Populate Expiry Dropdown
+            if (expiries && expiries.length > 0) {
+                const expirySelect = document.getElementById('filter-expiry');
+                if (expirySelect) {
+                    // Only update if options changed to prevent closing dropdown while user is interacting
+                    const currentExpiries = Array.from(expirySelect.options).map(o => o.value).filter(v => v !== 'ALL');
+                    if (currentExpiries.join(',') !== expiries.join(',')) {
+                        const currentSelected = expirySelect.value;
+                        expirySelect.innerHTML = '<option value="ALL">All Expiries</option>';
+                        expiries.forEach(exp => {
+                            const opt = document.createElement('option');
+                            opt.value = exp;
+                            opt.textContent = exp;
+                            expirySelect.appendChild(opt);
+                        });
+                        // restore selection if still valid
+                        if (expiries.includes(currentSelected)) {
+                            expirySelect.value = currentSelected;
+                        } else {
+                            expirySelect.value = 'ALL';
+                            state.filters.expiry = 'ALL';
+                        }
+                    }
+                }
+            }
+
             // Update cache and keep old values if missing to avoid flicker
             const newMarketData = [];
             liveOptions.forEach(opt => {
-                // Find existing to preserve or mock avgVol
                 const existing = state.marketData.find(m => m.id === opt.id);
                 const avgVol = avgVolCache[opt.id] || (existing ? existing.avgVol : Math.floor(3000 + Math.random() * 12000));
                 
@@ -83,10 +117,14 @@ export async function generateInitialData() {
             fetchAvgVolumes(state.selectedUniverse).catch(() => {});
             return;
         }
-        // If live fetch fails or returns empty, gracefully fall back to mock mode
     }
 
     // Mock Mode
+    if (state.selectedUniverse.length === 0) {
+        state.marketData = [];
+        return;
+    }
+    
     state.marketData = [];
     state.selectedUniverse.forEach(symbol => {
         const spot = SmartApiService.getLiveSpot(symbol) || MOCK_SPOTS[symbol] || 1000;

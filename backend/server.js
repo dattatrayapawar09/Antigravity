@@ -352,6 +352,7 @@ app.post('/api/instruments/options', async (req, res) => {
         // 2. Generate Option Chain Mapping for each symbol
         const optionTokensToFetch = [];
         const tokenToContractMap = {};
+        const availableExpiriesSet = new Set();
 
         for (const symbol of symbols) {
             const spot = spotPrices[symbol] || 0;
@@ -362,6 +363,10 @@ app.post('/api/instruments/options', async (req, res) => {
             if (mapping.error) {
                 console.warn(`[Options] Skipping ${symbol}: ${mapping.error}`);
                 continue;
+            }
+
+            if (mapping.allExpiries) {
+                mapping.allExpiries.forEach(e => availableExpiriesSet.add(e));
             }
 
             for (const contract of mapping.chain) {
@@ -411,7 +416,11 @@ app.post('/api/instruments/options', async (req, res) => {
             }
         }
 
-        res.json({ options: allOptions, mode: 'LIVE' });
+        res.json({ 
+            options: allOptions, 
+            expiries: Array.from(availableExpiriesSet).sort((a,b) => new Date(a) - new Date(b)),
+            mode: 'LIVE' 
+        });
 
     } catch (err) {
         console.error('[Options] Error:', err.message);

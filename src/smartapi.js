@@ -62,7 +62,7 @@ export const SmartApiService = {
             });
             const data = await res.json();
             if (data.options) {
-                return data.options;
+                return { options: data.options, expiries: data.expiries };
             }
         } catch (err) {
             console.warn(err);
