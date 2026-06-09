@@ -34,35 +34,40 @@ export const SmartApiService = {
     },
 
     async refreshSpotPrices(symbols) {
-
         if (!state.apiConnected) return;
-
         try {
-
-            const res = await fetch(
-                `${BACKEND_URL}/api/instruments/spot`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ symbols }),
-                    signal: AbortSignal.timeout(30000)
-                }
-            );
-
+            const res = await fetch(`${BACKEND_URL}/api/instruments/spot`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbols }),
+                signal: AbortSignal.timeout(30000)
+            });
             const data = await res.json();
-
             if (data.spotPrices) {
-                Object.assign(
-                    state.liveSpotCache,
-                    data.spotPrices
-                );
+                Object.assign(state.liveSpotCache, data.spotPrices);
             }
-
         } catch (err) {
             console.warn(err);
         }
+    },
+
+    async fetchOptionChain(symbols, expiry = null) {
+        if (!state.apiConnected) return null;
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/instruments/options`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbols, expiry }),
+                signal: AbortSignal.timeout(30000)
+            });
+            const data = await res.json();
+            if (data.options) {
+                return data.options;
+            }
+        } catch (err) {
+            console.warn(err);
+        }
+        return null;
     },
 
     getLiveSpot(symbol) {
