@@ -55,6 +55,8 @@ const password = requiredEnv('ANGEL_PASSWORD');
 const totpSec  = requiredEnv('ANGEL_TOTP_SECRET');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
+const DEBUG = process.env.DEBUG_LOG === 'true';
+function log(...args) { if (DEBUG) console.log(...args); }
 
 /* ──────────────────────────────────────────────────────────────
  * SAFE LOGGING
