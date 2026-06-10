@@ -218,7 +218,7 @@ async def fetch_and_cache_scrip_master() -> None:
             continue
 
         # ── 1. Cash market tokens ─────────────────────────────────────────────
-        if exch_seg in ("NSE", "BSE") and instrtype in ("EQ", "AMXIDX", "INDEX"):
+        if exch_seg in ("NSE", "BSE") and instrtype in ("EQ", "AMXIDX", "INDEX", ""):
             is_exact = (symbol == name or symbol == f"{name}-EQ")
             existing = C.cash_tokens.get(name)
 
