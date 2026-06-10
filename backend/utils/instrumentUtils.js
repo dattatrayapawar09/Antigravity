@@ -505,7 +505,7 @@ function getCacheStatus() {
 // ─── Cash Token Accessors ─────────────────────────────────────────────────────
 function getAllCashTokens() { return Object.values(cashTokens); }
 function getCashToken(symbol) {
-    return cashTokens[resolveSymbol(symbol)] || cashTokens[symbol] || null;
+    return INDEX_TOKENS[symbol] || cashTokens[resolveSymbol(symbol)] || cashTokens[symbol] || null;
 }
 
 // ─── Get all active expiries (for export to frontend) ────────────────────────

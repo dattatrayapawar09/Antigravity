@@ -42,11 +42,8 @@ export function initFilters(onFrontendFilterChange, onBackendFilterChange) {
  */
 export function applyFilters(data) {
     return data.filter(d => {
-        // Universe filter — skip if empty (show all)
-        if (
-            state.selectedUniverse.length > 0 &&
-            !state.selectedUniverse.includes(d.symbol)
-        ) return false;
+        // Universe filter
+        if (!state.selectedUniverse.includes(d.symbol)) return false;
 
         // Vol ratio
         if (d.volRatio < (state.filters.volRatio || 0)) return false;

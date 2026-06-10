@@ -396,15 +396,9 @@ window.showToast = showToast;
 // ═══════════════════════════════════════════════════════════════════════════
 // MARKET DATA REFRESH
 // ═══════════════════════════════════════════════════════════════════════════
-/**
- * Get the symbols relevant to the current tab, intersected with the selected universe.
- */
 function getTabSymbols() {
     const tabBase = currentTab === 'stocks' ? STOCK_SYMBOLS : INDEX_SYMBOLS;
-    // If selectedUniverse has symbols for this tab, use the intersection;
-    // otherwise fall back to the full tab base so the tab is never blank.
-    const intersection = state.selectedUniverse.filter(s => tabBase.includes(s));
-    return intersection.length > 0 ? intersection : tabBase;
+    return state.selectedUniverse.filter(s => tabBase.includes(s));
 }
 
 async function refreshMarketData() {
