@@ -2,13 +2,10 @@
 
 import { state } from './state.js';
 
-const PROD_BACKEND_URL = 'https://antigravity-backend.onrender.com';
-
-const IS_LOCAL =
-    window.location.hostname === 'localhost' ||
-    window.location.protocol === 'file:';
-
-export const BACKEND_URL = IS_LOCAL ? 'http://localhost:3001' : PROD_BACKEND_URL;
+// Auto-detect environment based on hostname
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
+const PROD_BACKEND_URL = 'https://antigravity-2un0.onrender.com';
+export const BACKEND_URL = isLocalhost ? 'http://localhost:3001' : PROD_BACKEND_URL;
 
 // Rate-limit login attempts — don't hammer backend
 let _lastLoginAttempt    = 0;
