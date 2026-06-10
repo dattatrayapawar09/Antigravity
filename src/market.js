@@ -99,7 +99,6 @@ export async function generateInitialData(symbolsToFetch) {
     const symbols = symbolsToFetch || state.selectedUniverse;
 
     if (!symbols || symbols.length === 0) {
-        state.marketData = [];
         return;
     }
 

@@ -357,21 +357,32 @@ app.post('/api/instruments/options', async (req, res) => {
         }
 
         const spotPrices = {};
-        symbols.forEach(sym => {
+        for (const sym of symbols) {
             const tok = instrumentUtils.getCashToken(sym);
             if (!tok) {
                 console.warn(`[Options] No cash token for "${sym}" — cannot fetch spot`);
-                return;
+                continue;
             }
             const key = tokenKey(tok.symboltoken);
             const q   = spotQuotes[key];
-            if (q) {
-                spotPrices[sym] = parseFloat(q.ltp ?? q.close ?? 0);
+            
+            let ltp = q ? parseFloat(q.ltp ?? q.close ?? 0) : 0;
+            
+            // Fallback for indices (batchQuote sometimes returns 0 or empty for indices)
+            if (ltp === 0) {
+                const ltpData = await client.getLtpData(tok.exchange, tok.tradingsymbol, tok.symboltoken);
+                if (ltpData && ltpData.ltp > 0) {
+                    ltp = parseFloat(ltpData.ltp);
+                }
+            }
+
+            if (ltp > 0) {
+                spotPrices[sym] = ltp;
                 console.log(`[Options][SPOT] ${sym} → token=${tok.symboltoken} exchange=${tok.exchange} LTP=${spotPrices[sym]}`);
             } else {
                 console.warn(`[Options][SPOT] ${sym} → token=${tok.symboltoken} — no quote returned (key="${key}")`);
             }
-        });
+        }
 
         // ── Step 2: Build option chain from scrip master ───────────────────────────
         const optionTokensToFetch = [];

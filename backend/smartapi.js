@@ -164,6 +164,23 @@ class SmartAPIClient {
         }
     }
 
+    async getLtpData(exchange, tradingsymbol, symboltoken) {
+        const authResult = await this.ensureAuthenticated();
+        if (!authResult.success) return null;
+
+        try {
+            const res = await axios.post(
+                `${BASE_URL}/rest/secure/angelbroking/order/v1/getLtpData`,
+                { exchange, tradingsymbol, symboltoken },
+                { headers: this._headers(true), timeout: 5000 }
+            );
+            return res.data?.data || null;
+        } catch (err) {
+            console.error('[SmartAPI] LTP error:', err.response?.data?.message || err.message);
+            return null;
+        }
+    }
+
     /**
      * Get option chain for a symbol
      */
