@@ -25,110 +25,132 @@ const STRIKE_STEP = {
 };
 
 // ── Previous avgVol cache — persists across refreshes to keep column stable ─
-// key: `${symbol}_${strike}_${type}` → avgVol number
 const avgVolCache = {};
 
 /**
- * Populate expiry dropdown from the live expiries returned by backend.
- * Only rebuilds the DOM if the expiry list has actually changed.
+ * Compute real upcoming expiry dates (Thursdays for NSE weekly contracts).
+ * Returns array like ['12JUN2026', '19JUN2026', '26JUN2026', '03JUL2026']
  */
-function populateExpiryDropdown(expiries) {
-    const expirySelect = document.getElementById('filter-expiry');
-    if (!expirySelect || !Array.isArray(expiries) || expiries.length === 0) return;
+function computeNearbyExpiries() {
+    const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const pad    = n  => String(n).padStart(2, '0');
+    const toExp  = dt => `${pad(dt.getDate())}${MONTHS[dt.getMonth()]}${dt.getFullYear()}`;
 
-    const currentExpiries = Array.from(expirySelect.options)
-        .map(o => o.value)
-        .filter(v => v !== 'ALL');
+    const now        = new Date();
+    const dayOfWeek  = now.getDay();                    // 0=Sun, 4=Thu
+    const daysToThur = dayOfWeek <= 4
+        ? 4 - dayOfWeek                                 // this week's Thursday (0 if today is Thu)
+        : 4 - dayOfWeek + 7;                            // next week's Thursday
 
-    if (currentExpiries.join(',') === expiries.join(',')) return; // nothing changed
+    const base = new Date(now);
+    base.setDate(base.getDate() + daysToThur);
+    base.setHours(0, 0, 0, 0);
 
-    const previousSelected = expirySelect.value;
-    expirySelect.innerHTML = '<option value="ALL">All Expiries</option>';
+    // If today IS Thursday but after 3:30 PM IST, roll to next Thursday
+    if (daysToThur === 0) {
+        const nowIST = new Date(now.getTime() + 5.5 * 3600000);
+        const hm     = nowIST.getUTCHours() * 60 + nowIST.getUTCMinutes();
+        if (hm >= 15 * 60 + 30) base.setDate(base.getDate() + 7);
+    }
+
+    const expiries = [];
+    for (let i = 0; i < 4; i++) {
+        const d = new Date(base);
+        d.setDate(d.getDate() + i * 7);
+        expiries.push(toExp(d));
+    }
+    return expiries;
+}
+
+/**
+ * Populate expiry dropdown from a list of expiry strings.
+ * Only rebuilds DOM if the list changed.
+ */
+export function populateExpiryDropdown(expiries) {
+    const sel = document.getElementById('filter-expiry');
+    if (!sel || !Array.isArray(expiries) || expiries.length === 0) return;
+
+    const current = Array.from(sel.options).map(o => o.value).filter(v => v !== 'ALL');
+    if (current.join(',') === expiries.join(',')) return; // no change
+
+    const prev = sel.value;
+    sel.innerHTML = '<option value="ALL">All Expiries</option>';
     expiries.forEach(exp => {
         const opt = document.createElement('option');
         opt.value = exp;
         opt.textContent = exp;
-        expirySelect.appendChild(opt);
+        sel.appendChild(opt);
     });
 
-    // Restore previous selection if it is still valid
-    expirySelect.value = expiries.includes(previousSelected) ? previousSelected : 'ALL';
-    if (!expiries.includes(previousSelected)) {
-        state.filters.expiry = 'ALL';
-    }
+    sel.value = expiries.includes(prev) ? prev : 'ALL';
+    if (!expiries.includes(prev)) state.filters.expiry = 'ALL';
 }
 
 /**
  * Main data refresh function.
  *
- * LIVE MODE (apiConnected = true):
- *   → Calls /api/instruments/options which returns exact strike prices,
- *     LTPs, OI, Volume directly from Angel One for the selected universe.
- *   → Updates expiry dropdown with real expiry dates from scrip master.
- *   → Updates state.liveSpotCache via smartapi.js.
+ * @param {string[]} symbolsToFetch - which symbols to fetch (tab-specific, from app.js)
  *
- * MOCK MODE (apiConnected = false):
- *   → Generates synthetic data based on MOCK_SPOTS and STRIKE_STEP.
- *   → Never sent to production — only for offline testing.
+ * LIVE MODE:  Calls /api/instruments/options for exact strike prices,
+ *             LTPs, OI, Volume directly from Angel One.
+ * MOCK MODE:  Generates synthetic data with REAL upcoming expiry dates.
  */
-export async function generateInitialData() {
+export async function generateInitialData(symbolsToFetch) {
+    const symbols = symbolsToFetch || state.selectedUniverse;
 
-    // ── LIVE PATH ─────────────────────────────────────────────────────────────
-    if (state.apiConnected) {
-        if (state.selectedUniverse.length === 0) {
-            state.marketData = [];
-            return;
-        }
-
-        const expiryToFetch = state.filters.expiry === 'ALL' ? null : state.filters.expiry;
-
-        const response = await SmartApiService.fetchOptionChain(
-            state.selectedUniverse,
-            expiryToFetch
-        );
-
-        if (response && Array.isArray(response.options) && response.options.length > 0) {
-            // Populate expiry dropdown with real dates
-            populateExpiryDropdown(response.expiries);
-
-            // Build new market data — preserve avgVol from previous cycles
-            const newMarketData = response.options.map(opt => {
-                const key = opt.id;  // e.g. "NIFTY_24500_CE"
-
-                // Update rolling avgVol cache
-                // Use the live volume as a seed if we don't have a prior cached value yet
-                if (opt.avgVol && opt.avgVol > 0) {
-                    avgVolCache[key] = opt.avgVol;
-                }
-
-                const cachedAvg = avgVolCache[key];
-                // Fallback: estimate avgVol as 80% of current volume (backend heuristic)
-                const avgVol = cachedAvg || (opt.volume > 0 ? Math.round(opt.volume * 0.8) : 1000);
-
-                return {
-                    ...opt,
-                    avgVol
-                };
-            });
-
-            state.marketData = newMarketData;
-            console.log(`[Market] Live data loaded: ${newMarketData.length} contracts`);
-            return;
-        }
-
-        console.warn('[Market] Live fetch returned no data — falling back to mock');
-        // Fall through to mock mode below
-    }
-
-    // ── MOCK PATH ─────────────────────────────────────────────────────────────
-    if (state.selectedUniverse.length === 0) {
+    if (!symbols || symbols.length === 0) {
         state.marketData = [];
         return;
     }
 
-    state.marketData = [];
+    // ── LIVE PATH ─────────────────────────────────────────────────────────────
+    if (state.apiConnected) {
+        const expiryFilter = state.filters.expiry === 'ALL' ? null : state.filters.expiry;
 
-    state.selectedUniverse.forEach(symbol => {
+        const response = await SmartApiService.fetchOptionChain(symbols, expiryFilter);
+
+        if (response && Array.isArray(response.options) && response.options.length > 0) {
+            // Populate expiry dropdown with real dates from scrip master
+            if (response.expiries && response.expiries.length > 0) {
+                populateExpiryDropdown(response.expiries);
+            }
+
+            // Build market data — preserve avgVol across cycles
+            const newData = response.options.map(opt => {
+                const key = opt.id;
+                if (opt.avgVol && opt.avgVol > 0) avgVolCache[key] = opt.avgVol;
+                const avgVol = avgVolCache[key]
+                    || (opt.volume > 0 ? Math.round(opt.volume * 0.8) : 1000);
+                return { ...opt, avgVol };
+            });
+
+            // Merge with existing marketData — keep data for symbols NOT in this fetch
+            // so switching tabs doesn't blank out the other tab's cached data
+            const otherSymbolData = state.marketData.filter(
+                m => !symbols.includes(m.symbol)
+            );
+            state.marketData = [...otherSymbolData, ...newData];
+
+            console.log(`[Market] Live: ${newData.length} contracts for [${symbols.join(',')}]`);
+            return;
+        }
+
+        console.warn('[Market] Live fetch returned no data — using mock for these symbols');
+    }
+
+    // ── MOCK PATH ─────────────────────────────────────────────────────────────
+    // Use REAL upcoming expiry dates so the table never shows "MOCK"
+    const nearbyExpiries = computeNearbyExpiries();
+    const nearestExpiry  = nearbyExpiries[0];           // e.g. "12JUN2026"
+
+    // Populate expiry dropdown with computed expiries
+    populateExpiryDropdown(nearbyExpiries);
+
+    // Remove any stale mock data for these symbols and rebuild
+    const otherData = state.marketData.filter(m => !symbols.includes(m.symbol));
+    const mockData  = [];
+
+    symbols.forEach(symbol => {
         const spot = SmartApiService.getLiveSpot(symbol) || MOCK_SPOTS[symbol] || 1000;
         const step = STRIKE_STEP[symbol] || 50;
         const atm  = Math.round(spot / step) * step;
@@ -139,7 +161,7 @@ export async function generateInitialData() {
             ['CE', 'PE'].forEach(type => {
                 const id = `${symbol}_${strike}_${type}`;
 
-                // Stable avgVol — re-use cached or generate once
+                // Stable avgVol — generate once and persist
                 if (!avgVolCache[id]) {
                     avgVolCache[id] = Math.floor(5000 + Math.random() * 15000);
                 }
@@ -152,12 +174,12 @@ export async function generateInitialData() {
                 const prevPrice = +(price * (0.97 + Math.random() * 0.06)).toFixed(2);
                 const volume    = Math.floor(avgVol * (0.6 + Math.random() * 1.8));
                 const oi        = Math.floor(20000 + Math.random() * 100000);
-                const prevOi    = Math.floor(oi * (0.90 + Math.random() * 0.20));
+                const prevOi    = Math.floor(oi * (0.88 + Math.random() * 0.24));
                 const iv        = +(15 + Math.random() * 20 + Math.abs(i) * 1.5).toFixed(1);
 
-                state.marketData.push({
+                mockData.push({
                     id, symbol, strike, type,
-                    expiry:    'MOCK',
+                    expiry:    nearestExpiry,   // ← REAL DATE, not 'MOCK'
                     spot,
                     price,
                     prevPrice,
@@ -171,9 +193,10 @@ export async function generateInitialData() {
         }
     });
 
-    console.log(`[Market] Mock data generated: ${state.marketData.length} contracts`);
+    state.marketData = [...otherData, ...mockData];
+    console.log(`[Market] Mock: ${mockData.length} contracts for [${symbols.join(',')}], expiry=${nearestExpiry}`);
 }
 
-export async function initMarket() {
-    await generateInitialData();
+export async function initMarket(symbolsToFetch) {
+    await generateInitialData(symbolsToFetch);
 }

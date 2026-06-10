@@ -3,11 +3,12 @@
 // Password: datta@7020083825
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { state }                            from './src/state.js';
-import { generateInitialData, ALL_FNO_SYMBOLS } from './src/market.js';
-import { SmartApiService }                  from './src/smartapi.js';
-import { initFilters, applyFilters }        from './src/filters.js';
-import { calculateMetrics }                 from './src/analytics.js';
+import { state }                                     from './src/state.js';
+import { generateInitialData, ALL_FNO_SYMBOLS,
+         populateExpiryDropdown }                     from './src/market.js';
+import { SmartApiService, BACKEND_URL }               from './src/smartapi.js';
+import { initFilters, applyFilters }                  from './src/filters.js';
+import { calculateMetrics }                           from './src/analytics.js';
 
 const VALID_PASSWORD = 'datta@7020083825';
 
@@ -41,7 +42,8 @@ function renderDashboard() {
     data = data.slice(0, 50);
 
     if (data.length === 0) {
-        tableBody.innerHTML = '<tr class="loading-row"><td colspan="14">Loading market data…</td></tr>';
+        const modeLabel = state.apiConnected ? 'No options data for this filter' : '⚠️ Mock Mode — Connecting to SmartAPI…';
+        tableBody.innerHTML = `<tr class="loading-row"><td colspan="14">${modeLabel}</td></tr>`;
         return;
     }
 
@@ -229,7 +231,8 @@ function setupTabs() {
             // Update tab label
             const h2 = document.querySelector('#view-dashboard .table-header-area h2');
             if (h2) h2.textContent = tab === 'stocks' ? 'Top 50 Stock Options Surges' : 'Top 50 Index Options Surges';
-            renderDashboard();
+            // Refresh data for the new tab
+            refreshMarketData();
         }
     }
 
@@ -347,24 +350,17 @@ function setupSettingsModal() {
         };
         localStorage.setItem('ag_api_creds', JSON.stringify(creds));
 
-        // Try to connect via backend
+        // Try to connect via backend login
         try {
-            const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(creds),
-                signal: AbortSignal.timeout(10000)
-            });
-            const data = await res.json();
-            showToast(data.connected ? '✅ Connected to SmartAPI!' : '❌ Auth failed: ' + (data.error || 'Unknown'));
-            if (data.connected) {
-                state.apiConnected = true;
-                SmartApiService.updateBadge();
+            showToast('🔄 Connecting to SmartAPI…', 5000);
+            const connected = await SmartApiService.triggerLogin();
+            showToast(connected ? '✅ Connected to SmartAPI!' : '❌ Auth failed — check credentials');
+            if (connected) {
                 modal.style.display = 'none';
                 await refreshMarketData();
             }
         } catch (err) {
-            showToast('⚠️ Backend unreachable — running in mock mode');
+            showToast('⚠️ Backend unreachable — check Render service');
         }
     });
 
@@ -400,18 +396,30 @@ window.showToast = showToast;
 // ═══════════════════════════════════════════════════════════════════════════
 // MARKET DATA REFRESH
 // ═══════════════════════════════════════════════════════════════════════════
+/**
+ * Get the symbols relevant to the current tab, intersected with the selected universe.
+ */
+function getTabSymbols() {
+    const tabBase = currentTab === 'stocks' ? STOCK_SYMBOLS : INDEX_SYMBOLS;
+    // If selectedUniverse has symbols for this tab, use the intersection;
+    // otherwise fall back to the full tab base so the tab is never blank.
+    const intersection = state.selectedUniverse.filter(s => tabBase.includes(s));
+    return intersection.length > 0 ? intersection : tabBase;
+}
+
 async function refreshMarketData() {
-    // Re-check auth on every cycle — handles re-login after token expiry
     const wasConnected = state.apiConnected;
+    // checkStatus() has internal rate-limiting for login — safe to call each cycle
     await SmartApiService.checkStatus();
 
-    // Spot prices are now embedded in the /options response — no separate call needed
-    await generateInitialData();
+    // Fetch data only for the current tab's symbols (faster, avoids timeouts)
+    const tabSymbols = getTabSymbols();
+    await generateInitialData(tabSymbols);
     renderDashboard();
 
     // Notify user when connection state changes
     if (!wasConnected && state.apiConnected) {
-        showToast('✅ Connected to SmartAPI — Loading live data…');
+        showToast('✅ Connected to SmartAPI — Live data active!');
     } else if (wasConnected && !state.apiConnected) {
         showToast('⚠️ SmartAPI disconnected — Showing mock data');
     }
@@ -462,15 +470,20 @@ window.addEventListener('DOMContentLoaded', async () => {
     // Set default universe (all symbols)
     state.selectedUniverse = [...INDEX_SYMBOLS, ...STOCK_SYMBOLS];
 
-    // Check backend connection (triggers auto-login if not authenticated)
+    // Check backend connection — triggers auto-login if not authenticated
     await SmartApiService.checkStatus();
 
-    // Load initial data and render
-    await generateInitialData();
+    // Initial data load for the default (index) tab
+    const initialSymbols = getTabSymbols();
+    await generateInitialData(initialSymbols);
     renderDashboard();
 
-    showToast('✅ Dashboard loaded — ' + (state.apiConnected ? 'SmartAPI Live' : 'Mock Mode (backend connecting…)'));
+    showToast(
+        state.apiConnected
+            ? '✅ SmartAPI Live — Data loaded!'
+            : '⚠️ Mock Mode — Backend connecting in background…'
+    );
 
-    // Poll every 5 seconds — also re-checks auth each cycle
-    setInterval(refreshMarketData, 5000);
+    // Poll every 10 seconds — checkStatus() internally rate-limits login to every 30s
+    setInterval(refreshMarketData, 10000);
 });
