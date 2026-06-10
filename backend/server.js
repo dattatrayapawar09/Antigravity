@@ -322,7 +322,7 @@ app.post('/api/instruments/spot', async (req, res) => {
  * OPTION CHAINS
  * POST /api/instruments/options
  * Body: { symbols: ['NIFTY', 'BANKNIFTY', ...], expiry: '27JUN2024' (optional) }
- * Returns: { options: [...] }
+ * Returns: { options: [...], expiries: [...] }
  * ────────────────────────────────────────────────────────────── */
 
 app.post('/api/instruments/options', async (req, res) => {
@@ -331,37 +331,65 @@ app.post('/api/instruments/options', async (req, res) => {
         const expiry  = req.body.expiry || null;
 
         if (!client.isTokenValid()) {
-            return res.json({ options: [], mode: 'MOCK' });
+            console.warn('[Options] Not authenticated — returning MOCK');
+            return res.json({ options: [], expiries: [], mode: 'MOCK' });
         }
+
+        // Guard: scrip master must be loaded
+        const cacheStatus = instrumentUtils.getCacheStatus();
+        if (!cacheStatus.loaded) {
+            console.warn('[Options] Scrip master not yet loaded — returning empty');
+            return res.json({ options: [], expiries: [], mode: 'LOADING' });
+        }
+
+        console.log(`[Options] Request: symbols=${symbols.join(',')} expiry=${expiry || 'auto'}`);
 
         const allOptions = [];
 
-        // 1. Get spot prices to find ATM strike
-        const spotInstruments = symbols.map(sym => instrumentUtils.getCashToken(sym)).filter(Boolean);
-        const quotes = spotInstruments.length > 0 ? await batchQuote(spotInstruments, 'LTP') : {};
-        
+        // ── Step 1: Fetch spot prices (underlying indices/stocks only) ─────────────
+        const spotInstruments = symbols
+            .map(sym => instrumentUtils.getCashToken(sym))
+            .filter(Boolean);
+
+        let spotQuotes = {};
+        if (spotInstruments.length > 0) {
+            spotQuotes = await batchQuote(spotInstruments, 'LTP') || {};
+        }
+
         const spotPrices = {};
         symbols.forEach(sym => {
             const tok = instrumentUtils.getCashToken(sym);
-            if (tok) {
-                const q = quotes[tokenKey(tok.symboltoken)];
-                if (q) spotPrices[sym] = parseFloat(q.ltp ?? q.close ?? 0);
+            if (!tok) {
+                console.warn(`[Options] No cash token for "${sym}" — cannot fetch spot`);
+                return;
+            }
+            const key = tokenKey(tok.symboltoken);
+            const q   = spotQuotes[key];
+            if (q) {
+                spotPrices[sym] = parseFloat(q.ltp ?? q.close ?? 0);
+                console.log(`[Options][SPOT] ${sym} → token=${tok.symboltoken} exchange=${tok.exchange} LTP=${spotPrices[sym]}`);
+            } else {
+                console.warn(`[Options][SPOT] ${sym} → token=${tok.symboltoken} — no quote returned (key="${key}")`);
             }
         });
 
-        // 2. Generate Option Chain Mapping for each symbol
+        // ── Step 2: Build option chain from scrip master ───────────────────────────
         const optionTokensToFetch = [];
-        const tokenToContractMap = {};
+        const tokenToContractMap  = {};
         const availableExpiriesSet = new Set();
 
         for (const symbol of symbols) {
             const spot = spotPrices[symbol] || 0;
-            if (spot === 0) continue; // Skip if we don't have spot price
 
-            const mapping = instrumentUtils.generateOptionChainMapping(symbol, expiry, spot, 5); // +/- 5 strikes
-            
+            if (spot === 0) {
+                console.warn(`[Options] ${symbol}: spot=0, skipping option chain`);
+                continue;
+            }
+
+            const mapping = instrumentUtils.generateOptionChainMapping(symbol, expiry, spot, 5);
+
             if (mapping.error) {
-                console.warn(`[Options] Skipping ${symbol}: ${mapping.error}`);
+                console.warn(`[Options] generateOptionChainMapping error for ${symbol}: ${mapping.error}`);
                 continue;
             }
 
@@ -369,11 +397,14 @@ app.post('/api/instruments/options', async (req, res) => {
                 mapping.allExpiries.forEach(e => availableExpiriesSet.add(e));
             }
 
+            console.log(`[Options] ${symbol} | spot=${spot} | ATM=${mapping.atmStrike} | expiry=${mapping.expiry} | contracts=${mapping.chain.length}`);
+
             for (const contract of mapping.chain) {
-                optionTokensToFetch.push({
-                    exchange: contract.exch_seg,
+                const instrObj = {
+                    exchange:    contract.exch_seg,
                     symboltoken: contract.token
-                });
+                };
+                optionTokensToFetch.push(instrObj);
                 tokenToContractMap[tokenKey(contract.token)] = {
                     ...contract,
                     spotPrice: spot
@@ -381,51 +412,117 @@ app.post('/api/instruments/options', async (req, res) => {
             }
         }
 
-        // 3. Fetch real-time quotes for all option contracts
+        // ── Step 3: Fetch real-time LTP/OI/Volume for all option tokens ───────────
+        let optionQuotes = {};
         if (optionTokensToFetch.length > 0) {
-            const optionQuotes = await batchQuote(optionTokensToFetch, 'FULL'); // need FULL for OI, Volume, PrevClose
-
-            for (const token of optionTokensToFetch) {
-                const key = tokenKey(token.symboltoken);
-                const q = optionQuotes[key];
-                const contract = tokenToContractMap[key];
-
-                if (q && contract) {
-                    const price = parseFloat(q.ltp ?? 0);
-                    const prevPrice = parseFloat(q.close ?? price);
-                    const oi = parseInt(q.opnInterest ?? 0, 10);
-                    // Use a mock prevOi slightly randomized if it's identical, to show some change
-                    const prevOi = oi > 0 ? Math.floor(oi * (0.95 + Math.random() * 0.1)) : 0;
-                    const volume = parseInt(q.volume ?? 0, 10);
-
-                    allOptions.push({
-                        id: `${contract.underlying}_${contract.strike}_${contract.type}`,
-                        symbol: contract.underlying,
-                        strike: contract.strike,
-                        type: contract.type,
-                        expiry: contract.expiry,
-                        spot: contract.spotPrice,
-                        price: price,
-                        prevPrice: prevPrice,
-                        volume: volume,
-                        oi: oi,
-                        prevOi: prevOi,
-                        iv: 0 // Optional: implement Black-Scholes if needed
-                    });
-                }
-            }
+            console.log(`[Options] Fetching quotes for ${optionTokensToFetch.length} contracts...`);
+            optionQuotes = await batchQuote(optionTokensToFetch, 'FULL') || {};
+            console.log(`[Options] Received quotes for ${Object.keys(optionQuotes).length} tokens`);
         }
 
-        res.json({ 
-            options: allOptions, 
-            expiries: Array.from(availableExpiriesSet).sort((a,b) => new Date(a) - new Date(b)),
-            mode: 'LIVE' 
+        // ── Step 4: Assemble final option records ─────────────────────────────────
+        for (const instr of optionTokensToFetch) {
+            const key      = tokenKey(instr.symboltoken);
+            const q        = optionQuotes[key];
+            const contract = tokenToContractMap[key];
+
+            if (!contract) continue;
+
+            // Debug every contract
+            if (q) {
+                const ltp = parseFloat(q.ltp ?? 0);
+                console.log(
+                    `[Options][CONTRACT] ${contract.underlying} | expiry=${contract.expiry}` +
+                    ` | strike=${contract.strike} | type=${contract.type}` +
+                    ` | token=${contract.token} | LTP=${ltp}` +
+                    ` | OI=${q.opnInterest ?? 0} | Vol=${q.volume ?? 0}` +
+                    ` | spot=${contract.spotPrice} | sym=${contract.symbol}`
+                );
+            } else {
+                console.warn(
+                    `[Options][MISS] ${contract.underlying} ${contract.strike} ${contract.type}` +
+                    ` token=${contract.token} — no quote (key="${key}")`
+                );
+            }
+
+            const price     = q ? parseFloat(q.ltp     ?? 0) : 0;
+            const prevPrice = q ? parseFloat(q.close    ?? price) : price;
+            const oi        = q ? parseInt(q.opnInterest ?? 0, 10) : 0;
+            const prevOi    = q ? parseInt(q.lowerCircuit ?? 0, 10) : 0;   // Angel One doesn't expose prev OI directly
+            const volume    = q ? parseInt(q.volume     ?? 0, 10) : 0;
+            const iv        = q ? parseFloat(q.impliedVol ?? 0) : 0;
+
+            allOptions.push({
+                id:        `${contract.underlying}_${contract.strike}_${contract.type}`,
+                symbol:    contract.underlying,
+                strike:    contract.strike,
+                type:      contract.type,
+                expiry:    contract.expiry,
+                spot:      contract.spotPrice,
+                price,
+                prevPrice,
+                volume,
+                avgVol:    volume > 0 ? Math.round(volume * 0.8) : 0,  // Estimated avg (5-day fetch is too slow inline)
+                oi,
+                prevOi:    oi > 0 ? Math.round(oi * 0.97) : 0,         // Estimate prev OI — no direct API field
+                iv
+            });
+        }
+
+        console.log(`[Options] Returning ${allOptions.length} contracts`);
+
+        res.json({
+            options:  allOptions,
+            expiries: Array.from(availableExpiriesSet)
+                .sort((a, b) => {
+                    const MONTHS = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+                    const parse = s => { const m = s.match(/^(\d{2})([A-Z]{3})(\d{4})$/); return m ? new Date(+m[3], MONTHS[m[2]]??0, +m[1]) : new Date(0); };
+                    return parse(a) - parse(b);
+                }),
+            mode: 'LIVE'
         });
 
     } catch (err) {
-        console.error('[Options] Error:', err.message);
-        res.status(500).json({ error: err.message, options: [] });
+        console.error('[Options] Unhandled error:', err.message, err.stack);
+        res.status(500).json({ error: err.message, options: [], expiries: [] });
     }
+});
+
+/* ──────────────────────────────────────────────────────────────
+ * DEBUG: Validate a single contract
+ * GET /api/debug/validate?sym=NIFTY&expiry=26JUN2025&strike=24500&type=CE
+ * ────────────────────────────────────────────────────────────── */
+
+app.get('/api/debug/validate', async (req, res) => {
+    const { sym, expiry, strike, type } = req.query;
+    const info = instrumentUtils.getContractDebugInfo(
+        sym   || 'NIFTY',
+        expiry || null,
+        parseFloat(strike || 24500),
+        type  || 'CE'
+    );
+
+    let liveQuote = null;
+    if (info.contract && client.isTokenValid()) {
+        const q = await batchQuote([{
+            exchange:    info.contract.exch_seg,
+            symboltoken: info.contract.token
+        }], 'FULL');
+        liveQuote = q[tokenKey(info.contract.token)] || null;
+    }
+
+    const spot = instrumentUtils.getCashToken(sym || 'NIFTY');
+
+    res.json({ info, liveQuote, cashToken: spot });
+});
+
+/* ──────────────────────────────────────────────────────────────
+ * DEBUG: Cache status
+ * GET /api/debug/cache
+ * ────────────────────────────────────────────────────────────── */
+
+app.get('/api/debug/cache', (req, res) => {
+    res.json(instrumentUtils.getCacheStatus());
 });
 
 /* ──────────────────────────────────────────────────────────────

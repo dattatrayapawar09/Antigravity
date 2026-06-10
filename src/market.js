@@ -1,14 +1,14 @@
 // market.js — Market data generation + live data fetching
 
 import { state } from './state.js';
-import { SmartApiService, BACKEND_URL } from './smartapi.js';
+import { SmartApiService } from './smartapi.js';
 
-export const INDEX_SYMBOLS = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
-export const STOCK_SYMBOLS = ['RELIANCE', 'SBIN', 'INFY', 'TCS', 'HDFCBANK',
-                              'ICICIBANK', 'ADANIENT', 'WIPRO', 'AXISBANK', 'MARUTI'];
+export const INDEX_SYMBOLS  = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+export const STOCK_SYMBOLS  = ['RELIANCE', 'SBIN', 'INFY', 'TCS', 'HDFCBANK',
+                               'ICICIBANK', 'ADANIENT', 'WIPRO', 'AXISBANK', 'MARUTI'];
 export const ALL_FNO_SYMBOLS = [...INDEX_SYMBOLS, ...STOCK_SYMBOLS];
 
-// Default spot prices for mock mode
+// ── Mock spot prices (used only in mock mode) ───────────────────────────────
 const MOCK_SPOTS = {
     NIFTY: 24500, BANKNIFTY: 52000, FINNIFTY: 23800, MIDCPNIFTY: 12500,
     RELIANCE: 2950, SBIN: 820, INFY: 1480, TCS: 3800,
@@ -16,7 +16,7 @@ const MOCK_SPOTS = {
     AXISBANK: 1190, MARUTI: 12400
 };
 
-// Strike step per symbol
+// ── Strike step sizes (used only in mock mode) ──────────────────────────────
 const STRIKE_STEP = {
     NIFTY: 50, BANKNIFTY: 100, FINNIFTY: 50, MIDCPNIFTY: 25,
     RELIANCE: 20, SBIN: 10, INFY: 20, TCS: 50,
@@ -24,42 +24,56 @@ const STRIKE_STEP = {
     AXISBANK: 20, MARUTI: 100
 };
 
-// In-memory store for 5-session avg volumes
-// key: `${symbol}_${strike}_${type}` → avgVol
+// ── Previous avgVol cache — persists across refreshes to keep column stable ─
+// key: `${symbol}_${strike}_${type}` → avgVol number
 const avgVolCache = {};
 
 /**
- * Fetch 5-session average volume from backend.
- * Falls back to mock values if backend unavailable.
+ * Populate expiry dropdown from the live expiries returned by backend.
+ * Only rebuilds the DOM if the expiry list has actually changed.
  */
-async function fetchAvgVolumes(symbols) {
-    if (!state.apiConnected) return; // skip in mock mode
+function populateExpiryDropdown(expiries) {
+    const expirySelect = document.getElementById('filter-expiry');
+    if (!expirySelect || !Array.isArray(expiries) || expiries.length === 0) return;
 
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/instruments/avgvol`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbols }),
-            signal: AbortSignal.timeout(15000)
-        });
+    const currentExpiries = Array.from(expirySelect.options)
+        .map(o => o.value)
+        .filter(v => v !== 'ALL');
 
-        if (!res.ok) return;
+    if (currentExpiries.join(',') === expiries.join(',')) return; // nothing changed
 
-        const data = await res.json();
-        if (data.avgVols) {
-            Object.assign(avgVolCache, data.avgVols);
-        }
-    } catch {
-        // Silently fall back to mock avg volumes
+    const previousSelected = expirySelect.value;
+    expirySelect.innerHTML = '<option value="ALL">All Expiries</option>';
+    expiries.forEach(exp => {
+        const opt = document.createElement('option');
+        opt.value = exp;
+        opt.textContent = exp;
+        expirySelect.appendChild(opt);
+    });
+
+    // Restore previous selection if it is still valid
+    expirySelect.value = expiries.includes(previousSelected) ? previousSelected : 'ALL';
+    if (!expiries.includes(previousSelected)) {
+        state.filters.expiry = 'ALL';
     }
 }
 
 /**
- * Generate/refresh market data.
- * Fetches live spot + option LTPs when apiConnected,
- * otherwise uses randomised mock data.
+ * Main data refresh function.
+ *
+ * LIVE MODE (apiConnected = true):
+ *   → Calls /api/instruments/options which returns exact strike prices,
+ *     LTPs, OI, Volume directly from Angel One for the selected universe.
+ *   → Updates expiry dropdown with real expiry dates from scrip master.
+ *   → Updates state.liveSpotCache via smartapi.js.
+ *
+ * MOCK MODE (apiConnected = false):
+ *   → Generates synthetic data based on MOCK_SPOTS and STRIKE_STEP.
+ *   → Never sent to production — only for offline testing.
  */
 export async function generateInitialData() {
+
+    // ── LIVE PATH ─────────────────────────────────────────────────────────────
     if (state.apiConnected) {
         if (state.selectedUniverse.length === 0) {
             state.marketData = [];
@@ -68,64 +82,52 @@ export async function generateInitialData() {
 
         const expiryToFetch = state.filters.expiry === 'ALL' ? null : state.filters.expiry;
 
-        // Live Mode: Fetch from backend endpoint
-        const response = await SmartApiService.fetchOptionChain(state.selectedUniverse, expiryToFetch);
-        
-        if (response && response.options) {
-            const { options: liveOptions, expiries } = response;
-            
-            // Populate Expiry Dropdown
-            if (expiries && expiries.length > 0) {
-                const expirySelect = document.getElementById('filter-expiry');
-                if (expirySelect) {
-                    // Only update if options changed to prevent closing dropdown while user is interacting
-                    const currentExpiries = Array.from(expirySelect.options).map(o => o.value).filter(v => v !== 'ALL');
-                    if (currentExpiries.join(',') !== expiries.join(',')) {
-                        const currentSelected = expirySelect.value;
-                        expirySelect.innerHTML = '<option value="ALL">All Expiries</option>';
-                        expiries.forEach(exp => {
-                            const opt = document.createElement('option');
-                            opt.value = exp;
-                            opt.textContent = exp;
-                            expirySelect.appendChild(opt);
-                        });
-                        // restore selection if still valid
-                        if (expiries.includes(currentSelected)) {
-                            expirySelect.value = currentSelected;
-                        } else {
-                            expirySelect.value = 'ALL';
-                            state.filters.expiry = 'ALL';
-                        }
-                    }
-                }
-            }
+        const response = await SmartApiService.fetchOptionChain(
+            state.selectedUniverse,
+            expiryToFetch
+        );
 
-            // Update cache and keep old values if missing to avoid flicker
-            const newMarketData = [];
-            liveOptions.forEach(opt => {
-                const existing = state.marketData.find(m => m.id === opt.id);
-                const avgVol = avgVolCache[opt.id] || (existing ? existing.avgVol : Math.floor(3000 + Math.random() * 12000));
-                
-                newMarketData.push({
+        if (response && Array.isArray(response.options) && response.options.length > 0) {
+            // Populate expiry dropdown with real dates
+            populateExpiryDropdown(response.expiries);
+
+            // Build new market data — preserve avgVol from previous cycles
+            const newMarketData = response.options.map(opt => {
+                const key = opt.id;  // e.g. "NIFTY_24500_CE"
+
+                // Update rolling avgVol cache
+                // Use the live volume as a seed if we don't have a prior cached value yet
+                if (opt.avgVol && opt.avgVol > 0) {
+                    avgVolCache[key] = opt.avgVol;
+                }
+
+                const cachedAvg = avgVolCache[key];
+                // Fallback: estimate avgVol as 80% of current volume (backend heuristic)
+                const avgVol = cachedAvg || (opt.volume > 0 ? Math.round(opt.volume * 0.8) : 1000);
+
+                return {
                     ...opt,
                     avgVol
-                });
+                };
             });
-            state.marketData = newMarketData;
 
-            // Trigger background fetch for new avg volumes silently
-            fetchAvgVolumes(state.selectedUniverse).catch(() => {});
+            state.marketData = newMarketData;
+            console.log(`[Market] Live data loaded: ${newMarketData.length} contracts`);
             return;
         }
+
+        console.warn('[Market] Live fetch returned no data — falling back to mock');
+        // Fall through to mock mode below
     }
 
-    // Mock Mode
+    // ── MOCK PATH ─────────────────────────────────────────────────────────────
     if (state.selectedUniverse.length === 0) {
         state.marketData = [];
         return;
     }
-    
+
     state.marketData = [];
+
     state.selectedUniverse.forEach(symbol => {
         const spot = SmartApiService.getLiveSpot(symbol) || MOCK_SPOTS[symbol] || 1000;
         const step = STRIKE_STEP[symbol] || 50;
@@ -137,35 +139,39 @@ export async function generateInitialData() {
             ['CE', 'PE'].forEach(type => {
                 const id = `${symbol}_${strike}_${type}`;
 
-                // Use live avg volume if available, else random mock
-                const cachedAvg = avgVolCache[id];
-                const avgVol    = cachedAvg
-                    ? cachedAvg
-                    : Math.floor(3000 + Math.random() * 12000);
+                // Stable avgVol — re-use cached or generate once
+                if (!avgVolCache[id]) {
+                    avgVolCache[id] = Math.floor(5000 + Math.random() * 15000);
+                }
+                const avgVol = avgVolCache[id];
 
-                const itm   = type === 'CE' ? spot - strike : strike - spot;
+                const itm       = type === 'CE' ? spot - strike : strike - spot;
                 const intrinsic = Math.max(0, itm);
-                const extrinsic = Math.max(5, 150 - Math.abs(i) * 25 + Math.random() * 30);
+                const extrinsic = Math.max(5, 150 - Math.abs(i) * 25 + (Math.random() - 0.5) * 20);
                 const price     = +(intrinsic + extrinsic).toFixed(2);
-                const prevPrice = +(price * (0.95 + Math.random() * 0.1)).toFixed(2);
-
-                const volume  = Math.floor(avgVol * (0.6 + Math.random() * 1.8));
-                const oi      = Math.floor(10000 + Math.random() * 80000);
-                const prevOi  = Math.floor(oi * (0.88 + Math.random() * 0.24));
-                const iv      = +(15 + Math.random() * 25 + Math.abs(i) * 1.5).toFixed(1);
+                const prevPrice = +(price * (0.97 + Math.random() * 0.06)).toFixed(2);
+                const volume    = Math.floor(avgVol * (0.6 + Math.random() * 1.8));
+                const oi        = Math.floor(20000 + Math.random() * 100000);
+                const prevOi    = Math.floor(oi * (0.90 + Math.random() * 0.20));
+                const iv        = +(15 + Math.random() * 20 + Math.abs(i) * 1.5).toFixed(1);
 
                 state.marketData.push({
                     id, symbol, strike, type,
-                    expiry: 'WEEK1',
+                    expiry:    'MOCK',
                     spot,
-                    price, prevPrice,
-                    volume, avgVol,
-                    oi, prevOi,
+                    price,
+                    prevPrice,
+                    volume,
+                    avgVol,
+                    oi,
+                    prevOi,
                     iv
                 });
             });
         }
     });
+
+    console.log(`[Market] Mock data generated: ${state.marketData.length} contracts`);
 }
 
 export async function initMarket() {

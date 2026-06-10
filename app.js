@@ -5,7 +5,7 @@
 
 import { state }                            from './src/state.js';
 import { generateInitialData, ALL_FNO_SYMBOLS } from './src/market.js';
-import { SmartApiService, BACKEND_URL }     from './src/smartapi.js';
+import { SmartApiService }                  from './src/smartapi.js';
 import { initFilters, applyFilters }        from './src/filters.js';
 import { calculateMetrics }                 from './src/analytics.js';
 
@@ -401,11 +401,20 @@ window.showToast = showToast;
 // MARKET DATA REFRESH
 // ═══════════════════════════════════════════════════════════════════════════
 async function refreshMarketData() {
-    if (state.apiConnected) {
-        await SmartApiService.refreshSpotPrices(state.selectedUniverse);
-    }
+    // Re-check auth on every cycle — handles re-login after token expiry
+    const wasConnected = state.apiConnected;
+    await SmartApiService.checkStatus();
+
+    // Spot prices are now embedded in the /options response — no separate call needed
     await generateInitialData();
     renderDashboard();
+
+    // Notify user when connection state changes
+    if (!wasConnected && state.apiConnected) {
+        showToast('✅ Connected to SmartAPI — Loading live data…');
+    } else if (wasConnected && !state.apiConnected) {
+        showToast('⚠️ SmartAPI disconnected — Showing mock data');
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -453,15 +462,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     // Set default universe (all symbols)
     state.selectedUniverse = [...INDEX_SYMBOLS, ...STOCK_SYMBOLS];
 
-    // Check backend connection
+    // Check backend connection (triggers auto-login if not authenticated)
     await SmartApiService.checkStatus();
 
-    // Load data and render
+    // Load initial data and render
     await generateInitialData();
     renderDashboard();
 
-    // Poll every 5 seconds
-    setInterval(refreshMarketData, 5000);
+    showToast('✅ Dashboard loaded — ' + (state.apiConnected ? 'SmartAPI Live' : 'Mock Mode (backend connecting…)'));
 
-    showToast('✅ Dashboard loaded — ' + (state.apiConnected ? 'SmartAPI Live' : 'Mock Mode'));
+    // Poll every 5 seconds — also re-checks auth each cycle
+    setInterval(refreshMarketData, 5000);
 });

@@ -76,8 +76,10 @@ function unresolveSymbol(scripName) {
 //   MRF185000CE      → raw = 18500000 → / 100 = 185000           ✓
 //
 // The Angel One scrip master ALWAYS stores strikes as integer × 100.
-// This is consistent across all F&O instruments.
+// This is consistent across ALL F&O instruments — do NOT use any divisor heuristic.
 function normalizeStrike(rawStrike, symbol = null) {
+    // If a full trading symbol is given, extract strike directly from parsed symbol
+    // (most reliable — no division needed)
     if (symbol) {
         const parsed = parseOptionSymbol(symbol);
         if (parsed && parsed.strike) return parsed.strike;
@@ -85,11 +87,7 @@ function normalizeStrike(rawStrike, symbol = null) {
     if (rawStrike === null || rawStrike === undefined) return 0;
     const val = parseFloat(rawStrike);
     if (isNaN(val) || val <= 0) return 0;
-    
-    // Angel One strike values may come multiplied by 100 or 1000.
-    if (val % 1000 === 0 && val >= 1000000) {
-        return parseFloat((val / 1000).toFixed(2));
-    }
+    // Angel One ALWAYS stores raw strike as strike × 100
     return parseFloat((val / 100).toFixed(2));
 }
 
