@@ -12,6 +12,21 @@ export function initUI() {
     // Nothing needed here - login is handled in root app.js
 }
 
+function isMarketLive() {
+    const now = new Date();
+    // Convert to IST
+    const istOffset = 330 * 60000;
+    const nowIST = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + istOffset);
+    const day = nowIST.getDay();
+    const hours = nowIST.getHours();
+    const mins = nowIST.getMinutes();
+    
+    if (day === 0 || day === 6) return false;
+    
+    const timeInMins = hours * 60 + mins;
+    return timeInMins >= 9 * 60 + 15 && timeInMins <= 15 * 60 + 30;
+}
+
 export function renderDashboard() {
     const tableBody = document.getElementById('table-body');
     if (!tableBody) return;
@@ -24,11 +39,40 @@ export function renderDashboard() {
         return;
     }
 
+    const live = isMarketLive();
+    
+    // Update headers based on market status
+    document.getElementById('th-cur-vol').textContent = live ? 'Cur Vol' : 'Last Session Vol';
+    document.getElementById('th-avg-vol').textContent = live ? 'Avg Vol' : 'Last 5 Avg Vol';
+    document.getElementById('th-ratio').textContent = live ? 'Ratio' : 'Last Session Ratio';
+    document.getElementById('th-oi').textContent = live ? 'OI' : 'Last Session OI';
+    document.getElementById('th-iv').textContent = live ? 'IV' : 'Last Session IV';
+
     let html = '';
     processed.forEach(d => {
         const oiClass  = d.oiChgPct >= 0 ? 'text-bullish' : 'text-bearish';
         const typeClass = d.type === 'CE' ? 'text-bullish' : 'text-bearish';
         const spread   = (d.price - d.prevPrice).toFixed(2);
+        
+        let tooltipHtml = '';
+        if (d.historicalVolumes && d.historicalVolumes.length === 5) {
+            tooltipHtml = `
+            <div class="tooltip-popup glass-panel">
+                <strong>Last 5 Sessions</strong><br>
+                Day 1: ${(d.historicalVolumes[0] / 1000).toFixed(1)}K<br>
+                Day 2: ${(d.historicalVolumes[1] / 1000).toFixed(1)}K<br>
+                Day 3: ${(d.historicalVolumes[2] / 1000).toFixed(1)}K<br>
+                Day 4: ${(d.historicalVolumes[3] / 1000).toFixed(1)}K<br>
+                Day 5: ${(d.historicalVolumes[4] / 1000).toFixed(1)}K
+            </div>`;
+        }
+
+        const displayVol = live ? d.volume : (d.historicalVolumes ? d.historicalVolumes[4] : d.volume);
+        const displayRatio = live ? d.volRatio : (displayVol / (d.avgVol > 0 ? d.avgVol : Math.max(1, displayVol)));
+        
+        // For non-live, we assume OI/IV are relatively static from the last session
+        const displayOi = d.oi;
+        const displayIv = d.iv;
 
         html += `
           <tr onclick="window.openInsights('${d.id}')">
@@ -38,12 +82,15 @@ export function renderDashboard() {
             <td>${d.strike}</td>
             <td>${d.spot ? d.spot.toFixed(0) : '-'}</td>
             <td>₹${d.price}</td>
-            <td>${(d.volume / 1000).toFixed(1)}K</td>
-            <td>${(d.avgVol / 1000).toFixed(1)}K</td>
-            <td>${d.volRatio.toFixed(1)}x</td>
-            <td>${(d.oi / 1000).toFixed(1)}K</td>
+            <td>${(displayVol / 1000).toFixed(1)}K</td>
+            <td class="tooltip-container">
+                ${(d.avgVol / 1000).toFixed(1)}K
+                ${tooltipHtml}
+            </td>
+            <td>${displayRatio.toFixed(1)}x</td>
+            <td>${(displayOi / 1000).toFixed(1)}K</td>
             <td class="${oiClass}">${d.oiChgPct.toFixed(1)}%</td>
-            <td>${d.iv || '-'}%</td>
+            <td>${displayIv || '-'}%</td>
             <td>${spread}</td>
             <td>
               <span class="signal-tag ${d.signalClass || ''}">${d.signal}</span>

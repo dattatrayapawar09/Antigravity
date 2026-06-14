@@ -117,10 +117,27 @@ export async function generateInitialData(symbolsToFetch) {
             // Build market data — preserve avgVol across cycles
             const newData = response.options.map(opt => {
                 const key = opt.id;
-                if (opt.avgVol && opt.avgVol > 0) avgVolCache[key] = opt.avgVol;
-                const avgVol = avgVolCache[key]
-                    || (opt.volume > 0 ? Math.round(opt.volume * 0.8) : 1000);
-                return { ...opt, avgVol };
+                
+                // Stable avgVol and historical volumes — generate once and persist
+                if (!avgVolCache[key]) {
+                    const baseVol = opt.volume > 0 ? opt.volume : Math.floor(5000 + Math.random() * 15000);
+                    const history = [];
+                    for (let i = 0; i < 5; i++) {
+                        // Generate historical volumes +/- 50% around base
+                        history.push(Math.max(10, Math.floor(baseVol * (0.5 + Math.random()))));
+                    }
+                    avgVolCache[key] = {
+                        history,
+                        trueAvg: history.reduce((a, b) => a + b, 0) / 5
+                    };
+                }
+                
+                const cached = avgVolCache[key];
+                return { 
+                    ...opt, 
+                    historicalVolumes: cached.history,
+                    avgVol: cached.trueAvg 
+                };
             });
 
             // Merge with existing marketData — keep data for symbols NOT in this fetch
@@ -162,9 +179,19 @@ export async function generateInitialData(symbolsToFetch) {
 
                 // Stable avgVol — generate once and persist
                 if (!avgVolCache[id]) {
-                    avgVolCache[id] = Math.floor(5000 + Math.random() * 15000);
+                    const baseVol = Math.floor(5000 + Math.random() * 15000);
+                    const history = [];
+                    for (let j = 0; j < 5; j++) {
+                        history.push(Math.max(10, Math.floor(baseVol * (0.5 + Math.random()))));
+                    }
+                    avgVolCache[id] = {
+                        history,
+                        trueAvg: history.reduce((a, b) => a + b, 0) / 5
+                    };
                 }
-                const avgVol = avgVolCache[id];
+                const cached = avgVolCache[id];
+                const avgVol = cached.trueAvg;
+                const historicalVolumes = cached.history;
 
                 const itm       = type === 'CE' ? spot - strike : strike - spot;
                 const intrinsic = Math.max(0, itm);
@@ -184,6 +211,7 @@ export async function generateInitialData(symbolsToFetch) {
                     prevPrice,
                     volume,
                     avgVol,
+                    historicalVolumes,
                     oi,
                     prevOi,
                     iv
