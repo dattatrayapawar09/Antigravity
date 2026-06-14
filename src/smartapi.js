@@ -76,7 +76,6 @@ export const SmartApiService = {
      * Returns { options: [...], expiries: [...] } or null.
      */
     async fetchOptionChain(symbols, expiry = null) {
-        if (!state.apiConnected) return null;
         if (!symbols || symbols.length === 0) return null;
 
         try {
@@ -99,6 +98,13 @@ export const SmartApiService = {
                 state.apiConnected = false;
                 this.updateBadge();
                 return null;
+            }
+
+            // If we got here and mode is LIVE, auto-recover connection state!
+            if (!state.apiConnected && data.mode === 'LIVE') {
+                console.log('[SmartAPI] Recovered live connection automatically!');
+                state.apiConnected = true;
+                this.updateBadge();
             }
 
             if (!Array.isArray(data.options) || data.options.length === 0) {
