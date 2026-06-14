@@ -2,7 +2,7 @@
 
 import { state } from './state.js';
 
-const PROD_BACKEND_URL = 'https://antigravity-backend.onrender.com';
+const PROD_BACKEND_URL = 'https://antigravity-1-p6g2.onrender.com';
 
 const IS_LOCAL =
     window.location.hostname === 'localhost' ||
