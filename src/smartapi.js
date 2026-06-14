@@ -4,7 +4,7 @@ import { state } from './state.js';
 
 // Auto-detect environment based on hostname
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
-const PROD_BACKEND_URL = 'https://antigravity-2un0.onrender.com';
+const PROD_BACKEND_URL = 'https://antigravity-1-p6g2.onrender.com';
 export const BACKEND_URL = isLocalhost ? 'http://localhost:3001' : PROD_BACKEND_URL;
 
 // Rate-limit login attempts — don't hammer backend
