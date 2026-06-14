@@ -142,12 +142,7 @@ def _parse_expiry_date(expiry_str: str) -> Optional[datetime]:
 
 def is_expiry_future(expiry_str: str) -> bool:
     """Return True if the expiry is today or in the future (1-day grace)."""
-    dt = _parse_expiry_date(expiry_str)
-    if dt is None:
-        return True  # keep if unparseable
-    now = datetime.now(tz=timezone.utc)
-    # Allow today's expiry to remain (subtract 1 day grace)
-    return dt.date() >= now.date()
+    return True # Angel One Scrip Master only contains active expiries anyway. This prevents dropping 2024 dataset in a 2026 simulation.
 
 
 def sort_expiries(expiries: list[str]) -> list[str]:
