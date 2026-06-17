@@ -25,7 +25,7 @@ const STRIKE_STEP = {
 };
 
 // ── Previous avgVol cache — persists across refreshes to keep column stable ─
-const avgVolCache = {};
+
 
 /**
  * Compute real upcoming expiry dates (Thursdays for NSE weekly contracts).
