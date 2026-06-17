@@ -234,19 +234,30 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
 
         all_options.append(
             OptionContract(
-                id        = f"{contract['underlying']}_{contract['strike']}_{contract['type']}",
-                symbol    = contract["underlying"],
-                strike    = float(contract["strike"]),
-                type      = contract["type"],
-                expiry    = contract["expiry"],
-                spot      = float(contract["spotPrice"]),
-                price     = price,
-                prevPrice = prev_price,
-                volume    = volume,
-                avgVol    = round(volume * 0.8) if volume > 0 else 0,
-                oi        = oi,
-                prevOi    = round(oi * 0.97) if oi > 0 else 0,
-                iv        = iv,
+                id=f"{contract['underlying']}_{contract['strike']}_{contract['type']}",
+                symbol=contract["underlying"],
+                strike=float(contract["strike"]),
+                type=contract["type"],
+                expiry=contract["expiry"],
+        
+                # Spot from live market
+                spot=float(contract["spotPrice"]),
+        
+                # Option premium
+                price=price,
+                prevPrice=prev_price,
+        
+                # Actual exchange values
+                volume=volume,
+                oi=oi,
+                iv=iv,
+        
+                # Temporary placeholders
+                avgVol=volume,
+                prevOi=oi,
+        
+                # Future historical fields
+                historicalVolumes=[],
             )
         )
 
