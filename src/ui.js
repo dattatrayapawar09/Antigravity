@@ -55,7 +55,10 @@ export function renderDashboard() {
         const spread   = (d.price - d.prevPrice).toFixed(2);
         
         let tooltipHtml = '';
-        if (d.historicalVolumes && d.historicalVolumes.length === 5) {
+      if (
+    Array.isArray(d.historicalVolumes) &&
+    d.historicalVolumes.length > 0
+) {
             tooltipHtml = `
             <div class="tooltip-popup glass-panel">
                 <strong>Last 5 Sessions</strong><br>
@@ -67,8 +70,13 @@ export function renderDashboard() {
             </div>`;
         }
 
-        const displayVol = live ? d.volume : (d.historicalVolumes ? d.historicalVolumes[4] : d.volume);
-        const displayRatio = live ? d.volRatio : (displayVol / (d.avgVol > 0 ? d.avgVol : Math.max(1, displayVol)));
+        const displayVol = live
+    ? (d.volume || 0)
+    : (d.previousSessionVolume || d.volume || 0);
+        const displayRatio =
+    d.avgVol > 0
+        ? displayVol / d.avgVol
+        : 0;
         
         // For non-live, we assume OI/IV are relatively static from the last session
         const displayOi = d.oi;
