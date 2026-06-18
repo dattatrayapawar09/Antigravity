@@ -232,40 +232,40 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         volume     = int(q.get("volume") or 0) if q else 0
         iv         = float(q.get("impliedVol") or 0) if q else 0.0
 
-        all_options.append(
+       all_options.append(
             OptionContract(
                 id=f"{contract['underlying']}_{contract['strike']}_{contract['type']}",
                 symbol=contract["underlying"],
                 strike=float(contract["strike"]),
                 type=contract["type"],
                 expiry=contract["expiry"],
-            
+        
                 spot=float(contract["spotPrice"]),
-            
+        
                 price=price,
                 prevPrice=prev_price,
-            
+        
                 volume=volume,
                 avgVol=volume,
-            
+        
                 historicalVolumes=[],
                 previousSessionVolume=volume,
-            
+        
                 oi=oi,
                 prevOi=oi,
                 previousSessionOi=oi,
-            
+        
                 iv=iv,
-            
+        
                 bid=float(q.get("bestBidPrice", 0) or 0),
                 ask=float(q.get("bestAskPrice", 0) or 0),
                 spread=max(
                     0,
                     float(q.get("bestAskPrice", 0) or 0)
-                    -
-                    float(q.get("bestBidPrice", 0) or 0)
-                )
-            )               
+                    - float(q.get("bestBidPrice", 0) or 0)
+                ),
+            )
+        )
             # Temporary placeholders
                 avgVol=volume,
                 prevOi=oi,
