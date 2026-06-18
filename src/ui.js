@@ -33,6 +33,12 @@ export function renderDashboard() {
 
     let processed = state.marketData.map(calculateMetrics);
     processed = applyFilters(processed);
+    processed.sort(
+        (a, b) => b.volRatio - a.volRatio
+    );
+    
+    // Top 50 volume surge contracts
+    processed = processed.slice(0, 50);
 
     if (processed.length === 0) {
         tableBody.innerHTML = '<tr class="loading-row"><td colspan="14">No data. Select symbols from Universe filter.</td></tr>';
@@ -42,11 +48,17 @@ export function renderDashboard() {
     const live = isMarketLive();
     
     // Update headers based on market status
-    document.getElementById('th-cur-vol').textContent = live ? 'Cur Vol' : 'Last Session Vol';
-    document.getElementById('th-avg-vol').textContent = live ? 'Avg Vol' : 'Last 5 Avg Vol';
-    document.getElementById('th-ratio').textContent = live ? 'Ratio' : 'Last Session Ratio';
-    document.getElementById('th-oi').textContent = live ? 'OI' : 'Last Session OI';
-    document.getElementById('th-iv').textContent = live ? 'IV' : 'Last Session IV';
+    const thCurVol = document.getElementById('th-cur-vol');
+    const thAvgVol = document.getElementById('th-avg-vol');
+    const thRatio  = document.getElementById('th-ratio');
+    const thOi     = document.getElementById('th-oi');
+    const thIv     = document.getElementById('th-iv');
+    
+    if (thCurVol) thCurVol.textContent = live ? 'Cur Vol' : 'Last Session Vol';
+    if (thAvgVol) thAvgVol.textContent = live ? 'Avg Vol' : 'Last 5 Avg Vol';
+    if (thRatio)  thRatio.textContent  = live ? 'Ratio' : 'Last Session Ratio';
+    if (thOi)     thOi.textContent     = live ? 'OI' : 'Last Session OI';
+    if (thIv)     thIv.textContent     = live ? 'IV' : 'Last Session IV';
 
     let html = '';
     processed.forEach(d => {
@@ -59,15 +71,13 @@ export function renderDashboard() {
     Array.isArray(d.historicalVolumes) &&
     d.historicalVolumes.length > 0
 ) {
-            tooltipHtml = `
-            <div class="tooltip-popup glass-panel">
-                <strong>Last 5 Sessions</strong><br>
-                Day 1: ${(d.historicalVolumes[0] / 1000).toFixed(1)}K<br>
-                Day 2: ${(d.historicalVolumes[1] / 1000).toFixed(1)}K<br>
-                Day 3: ${(d.historicalVolumes[2] / 1000).toFixed(1)}K<br>
-                Day 4: ${(d.historicalVolumes[3] / 1000).toFixed(1)}K<br>
-                Day 5: ${(d.historicalVolumes[4] / 1000).toFixed(1)}K
-            </div>`;
+tooltipHtml = `
+<div class="tooltip-popup glass-panel">
+    <strong>Previous 5 Sessions</strong><br>
+    ${d.historicalVolumes
+        .map(v => `${(v / 1000).toFixed(1)}K`)
+        .join('<br>')}
+</div>`;
         }
 
         const displayVol = live
