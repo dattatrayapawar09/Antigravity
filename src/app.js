@@ -15,16 +15,34 @@ import {
     SmartApiService
 } from './smartapi.js';
 
+async function refreshData() {
+
+    try {
+
+        await SmartApiService.checkStatus();
+
+        await generateInitialData(
+            state.selectedUniverse
+        );
+
+        renderDashboard();
+
+    }
+    catch (err) {
+
+        console.error(
+            '[App] Refresh error:',
+            err
+        );
+    }
+}
+
 async function init() {
 
     state.selectedUniverse =
         [...ALL_FNO_SYMBOLS];
 
-    await SmartApiService.checkStatus();
-
-    await generateInitialData();
-
-    renderDashboard();
+    await refreshData();
 
     startPolling();
 }
@@ -32,15 +50,17 @@ async function init() {
 function startPolling() {
 
     if (state.updateInterval) {
-        clearInterval(state.updateInterval);
+
+        clearInterval(
+            state.updateInterval
+        );
     }
 
     state.updateInterval =
-        setInterval(async () => {
-
-            renderDashboard();
-
-        }, 3000);
+        setInterval(
+            refreshData,
+            10000
+        );
 }
 
 document.addEventListener(
