@@ -45,7 +45,6 @@ class SpotPricesResponse(BaseModel):
     spotPrices: dict[str, float]
     mode: str
 
-
 class OptionContract(BaseModel):
     id: str
     symbol: str
@@ -53,30 +52,27 @@ class OptionContract(BaseModel):
     type: str
     expiry: str
 
-    # Underlying Spot Price
     spot: float
 
-    # Option Premium
     price: float
     prevPrice: float
 
-    # Volume Data
     volume: int
     avgVol: int
 
-    # Historical Volume Support
     historicalVolumes: list[int] = Field(default_factory=list)
     previousSessionVolume: int = 0
 
-    # OI Data
     oi: int
     prevOi: int
     previousSessionOi: int = 0
 
-    # IV
     iv: float
 
-    # Timestamp
+    bid: float = 0
+    ask: float = 0
+    spread: float = 0
+
     lastUpdated: Optional[str] = None
 
 class OptionsResponse(BaseModel):
