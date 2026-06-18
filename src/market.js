@@ -110,10 +110,47 @@ export async function generateInitialData(symbolsToFetch) {
 
         if (response && Array.isArray(response.options) && response.options.length > 0) {
             // Populate expiry dropdown with real dates from scrip master
-            if (response.expiries && response.expiries.length > 0) {
+           if (response.expiries?.length > 0) {
                 populateExpiryDropdown(response.expiries);
             }
-
+            
+            const newData = response.options.map(opt => {
+            
+                const historicalVolumes =
+                    Array.isArray(opt.historicalVolumes)
+                        ? opt.historicalVolumes
+                        : [];
+            
+                const avgVol =
+                    historicalVolumes.length > 0
+                        ? Math.round(
+                            historicalVolumes.reduce((a,b)=>a+b,0)
+                            / historicalVolumes.length
+                        )
+                        : (opt.avgVol || opt.volume || 0);
+            
+                return {
+                    ...opt,
+                    historicalVolumes,
+                    avgVol
+                };
+            });
+            
+            const otherSymbolData =
+                state.marketData.filter(
+                    m => !symbols.includes(m.symbol)
+                );
+            
+            state.marketData = [
+                ...otherSymbolData,
+                ...newData
+            ];
+            
+            console.log(
+                `[Market] Live: ${newData.length} contracts`
+            );
+            
+            return;
             // Build market data — preserve avgVol across cycles
             function isMarketOpen() {
 
