@@ -239,20 +239,34 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 strike=float(contract["strike"]),
                 type=contract["type"],
                 expiry=contract["expiry"],
-        
-                # Spot from live market
+            
                 spot=float(contract["spotPrice"]),
-        
-                # Option premium
+            
                 price=price,
                 prevPrice=prev_price,
-        
-                # Actual exchange values
+            
                 volume=volume,
+                avgVol=volume,
+            
+                historicalVolumes=[],
+                previousSessionVolume=volume,
+            
                 oi=oi,
+                prevOi=oi,
+                previousSessionOi=oi,
+            
                 iv=iv,
-        
-                # Temporary placeholders
+            
+                bid=float(q.get("bestBidPrice", 0) or 0),
+                ask=float(q.get("bestAskPrice", 0) or 0),
+                spread=max(
+                    0,
+                    float(q.get("bestAskPrice", 0) or 0)
+                    -
+                    float(q.get("bestBidPrice", 0) or 0)
+                )
+            )               
+            # Temporary placeholders
                 avgVol=volume,
                 prevOi=oi,
         
