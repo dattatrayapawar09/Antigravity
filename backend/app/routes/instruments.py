@@ -265,10 +265,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                     - float(q.get("bestBidPrice", 0) or 0)
                 ),
             )
-        )
-            
-            )
-        
+        )        
     logger.info("[Options] Returning %d contracts", len(all_options))
 
     # Sort expiries chronologically
