@@ -266,12 +266,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 ),
             )
         )
-            # Temporary placeholders
-                avgVol=volume,
-                prevOi=oi,
-        
-                # Future historical fields
-                historicalVolumes=[],
+            
             )
         
     logger.info("[Options] Returning %d contracts", len(all_options))
