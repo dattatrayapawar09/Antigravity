@@ -226,46 +226,47 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 contract.get("type"), contract.get("token"),
             )
 
-        price      = float(q.get("ltp") or 0) if q else 0.0
+              price      = float(q.get("ltp") or 0) if q else 0.0
         prev_price = float(q.get("close") or price) if q else price
         oi         = int(q.get("opnInterest") or 0) if q else 0
         volume     = int(q.get("volume") or 0) if q else 0
         iv         = float(q.get("impliedVol") or 0) if q else 0.0
 
-       all_options.append(
+        all_options.append(
             OptionContract(
                 id=f"{contract['underlying']}_{contract['strike']}_{contract['type']}",
                 symbol=contract["underlying"],
                 strike=float(contract["strike"]),
                 type=contract["type"],
                 expiry=contract["expiry"],
-        
+
                 spot=float(contract["spotPrice"]),
-        
+
                 price=price,
                 prevPrice=prev_price,
-        
+
                 volume=volume,
                 avgVol=volume,
-        
+
                 historicalVolumes=[],
                 previousSessionVolume=volume,
-        
+
                 oi=oi,
                 prevOi=oi,
                 previousSessionOi=oi,
-        
+
                 iv=iv,
-        
+
                 bid=float(q.get("bestBidPrice", 0) or 0),
                 ask=float(q.get("bestAskPrice", 0) or 0),
+
                 spread=max(
                     0,
                     float(q.get("bestAskPrice", 0) or 0)
                     - float(q.get("bestBidPrice", 0) or 0)
                 ),
             )
-        )        
+        )
     logger.info("[Options] Returning %d contracts", len(all_options))
 
     # Sort expiries chronologically
