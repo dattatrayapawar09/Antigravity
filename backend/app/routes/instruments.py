@@ -226,7 +226,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 contract.get("type"), contract.get("token"),
             )
 
-              price      = float(q.get("ltp") or 0) if q else 0.0
+        price      = float(q.get("ltp") or 0) if q else 0.0
         prev_price = float(q.get("close") or price) if q else price
         oi         = int(q.get("opnInterest") or 0) if q else 0
         volume     = int(q.get("volume") or 0) if q else 0
