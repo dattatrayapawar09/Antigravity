@@ -168,41 +168,7 @@ export async function generateInitialData(symbolsToFetch) {
             );
             
             return;
-            // Build market data — preserve avgVol across cycles
-            function isMarketOpen() {
-
-                const now = new Date();
-            
-                const ist = new Date(
-                    now.toLocaleString(
-                        "en-US",
-                        { timeZone: "Asia/Kolkata" }
-                    )
-                );
-            
-                const day = ist.getDay();
-            
-                if (day === 0 || day === 6) {
-                    return false;
-                }
-            
-                const mins =
-                    ist.getHours() * 60 +
-                    ist.getMinutes();
-            
-                return mins >= 555 && mins <= 930;
-            }
-            // Merge with existing marketData — keep data for symbols NOT in this fetch
-            // so switching tabs doesn't blank out the other tab's cached data
-            const otherSymbolData = state.marketData.filter(
-                m => !symbols.includes(m.symbol)
-            );
-            state.marketData = [...otherSymbolData, ...newData];
-
-            console.log(`[Market] Live: ${newData.length} contracts for [${symbols.join(',')}]`);
-            return;
-        }
-
+         
         console.warn('[Market] Live fetch returned no data — using mock for these symbols');
     }
 
