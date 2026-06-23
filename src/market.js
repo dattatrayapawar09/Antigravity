@@ -25,7 +25,7 @@ const STRIKE_STEP = {
 };
 
 // ── Previous avgVol cache — persists across refreshes to keep column stable ─
-
+const avgVolCache = {};
 
 /**
  * Compute real upcoming expiry dates (Thursdays for NSE weekly contracts).
@@ -131,8 +131,25 @@ export async function generateInitialData(symbolsToFetch) {
             
                 return {
                     ...opt,
+                
                     historicalVolumes,
-                    avgVol
+                
+                    avgVol,
+                
+                    previousSessionVolume:
+                        Number(opt.previousSessionVolume) || 0,
+                
+                    previousSessionOi:
+                        Number(opt.previousSessionOi) || 0,
+                
+                    bid:
+                        Number(opt.bid) || 0,
+                
+                    ask:
+                        Number(opt.ask) || 0,
+                
+                    spread:
+                        Number(opt.spread) || 0
                 };
             });
             
