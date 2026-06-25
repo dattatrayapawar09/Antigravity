@@ -1,143 +1,166 @@
 // analytics.js
+// Calculates all option metrics and signal strength
 
 import { state } from './state.js';
 
 export function calculateMetrics(option) {
 
-    const price =
-        Number(option.price) || 0;
+    const price = Number(option.price) || 0;
+    const prevPrice = Number(option.prevPrice) || price;
 
-    const prevPrice =
-        Number(option.prevPrice) || price;
+    const oi = Number(option.oi) || 0;
+    const prevOi = Number(option.prevOi) || oi;
 
-    const oi =
-        Number(option.oi) || 0;
-
-    const prevOi =
-        Number(option.prevOi) || 0;
-
-    const volume =
-        Number(option.volume) || 0;
+    const volume = Number(option.volume) || 0;
 
     const avgVol =
-        Number(option.avgVol) || 0;
+        Number(option.avgVol) ||
+        Number(option.previousSessionVolume) ||
+        volume ||
+        1;
 
-    const iv =
-        Number(option.iv) || 0;
+    const iv = Number(option.iv) || 0;
 
-    const priceChg =
-        price - prevPrice;
+    const bid = Number(option.bid) || 0;
+    const ask = Number(option.ask) || 0;
 
-    const oiChg =
-        oi - prevOi;
+    const spread =
+        option.spread !== undefined
+            ? Number(option.spread)
+            : Math.max(0, ask - bid);
+
+    const priceChg = price - prevPrice;
+    const priceChgPct =
+        prevPrice > 0
+            ? ((price - prevPrice) / prevPrice) * 100
+            : 0;
+
+    const oiChg = oi - prevOi;
 
     const oiChgPct =
         prevOi > 0
             ? ((oi - prevOi) / prevOi) * 100
             : 0;
 
-    const safeAvgVol =
-        avgVol > 0
-            ? avgVol
-            : Math.max(volume, 1);
+    const safeAvg = Math.max(avgVol, 1);
 
-    const volRatio =
-        volume / safeAvgVol;
+    const volRatio = volume / safeAvg;
 
     const threshold =
-        Number(state.filters.volRatio) || 1.5;
+        Number(state.filters.volRatio) || 1;
 
-    let signal = 'Neutral';
-    let signalClass = 'signal-neutral';
+    let signal = "Neutral";
+    let signalClass = "signal-neutral";
 
-    if (priceChg > 0 && oiChg > 0) {
+    if (volRatio >= threshold) {
 
-        signal =
-            option.type === 'CE'
-                ? 'Long Buildup'
-                : 'Bearish Buildup';
+        if (priceChg > 0 && oiChg > 0) {
 
-        signalClass =
-            option.type === 'CE'
-                ? 'signal-bull'
-                : 'signal-bear';
+            signal =
+                option.type === "CE"
+                    ? "Long Buildup"
+                    : "Bearish Buildup";
+
+            signalClass =
+                option.type === "CE"
+                    ? "signal-bull"
+                    : "signal-bear";
+        }
+
+        else if (priceChg < 0 && oiChg > 0) {
+
+            signal = "Short Buildup";
+            signalClass = "signal-bear";
+        }
+
+        else if (priceChg > 0 && oiChg < 0) {
+
+            signal = "Short Covering";
+            signalClass = "signal-bull";
+        }
+
+        else if (priceChg < 0 && oiChg < 0) {
+
+            signal = "Long Unwinding";
+            signalClass = "signal-bear";
+        }
+
     }
 
-    else if (priceChg < 0 && oiChg > 0) {
+    //-------------------------------------------------------
+    // Signal Strength
+    //-------------------------------------------------------
 
-        signal = 'Short Buildup';
-        signalClass = 'signal-bear';
-    }
-
-    else if (priceChg > 0 && oiChg < 0) {
-
-        signal = 'Short Covering';
-        signalClass = 'signal-bull';
-    }
-
-    else if (priceChg < 0 && oiChg < 0) {
-
-        signal = 'Long Unwinding';
-        signalClass = 'signal-bear';
-    }
-
-    // Volume threshold filter
-    if (volRatio < threshold) {
-        signal = 'Neutral';
-        signalClass = 'signal-neutral';
-    }
-
-    // Signal strength scoring
     const volumeScore =
         Math.min(
-            50,
-            volRatio * 8
+            45,
+            volRatio * 12
         );
 
     const oiScore =
         Math.min(
-            30,
+            25,
             Math.abs(oiChgPct)
         );
 
     const ivScore =
         Math.min(
-            20,
-            iv
+            15,
+            iv / 2
         );
 
-    const strength =
+    const priceScore =
         Math.min(
-            100,
-            Math.round(
-                volumeScore +
-                oiScore +
-                ivScore
-            )
+            15,
+            Math.abs(priceChgPct)
         );
+
+    const strength = Math.min(
+        100,
+        Math.round(
+            volumeScore +
+            oiScore +
+            ivScore +
+            priceScore
+        )
+    );
+
+    //-------------------------------------------------------
+    // Return
+    //-------------------------------------------------------
 
     return {
+
         ...option,
 
         price,
         prevPrice,
 
+        priceChg,
+        priceChgPct,
+
         oi,
         prevOi,
 
-        volume,
-        avgVol,
-
-        iv,
-
-        priceChg,
         oiChg,
-
         oiChgPct,
+
+        volume,
+
+        avgVol,
 
         volRatio,
 
+        iv,
+
+        bid,
+
+        ask,
+
+        spread,
+
         signal,
+
         signalClass,
 
         strength
