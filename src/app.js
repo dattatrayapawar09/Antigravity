@@ -8,22 +8,25 @@ import {
 } from './market.js';
 
 import {
-    renderDashboard
+    renderDashboard,
+    initUI
 } from './ui.js';
+
+import {
+    initFilters
+} from './filters.js';
 
 import {
     SmartApiService
 } from './smartapi.js';
 
-async function refreshData() {
+async function refreshMarket() {
 
     try {
 
         await SmartApiService.checkStatus();
 
-        await generateInitialData(
-            state.selectedUniverse
-        );
+        await generateInitialData();
 
         renderDashboard();
 
@@ -31,20 +34,12 @@ async function refreshData() {
     catch (err) {
 
         console.error(
-            '[App] Refresh error:',
+            '[APP]',
             err
         );
+
     }
-}
 
-async function init() {
-
-    state.selectedUniverse =
-        [...ALL_FNO_SYMBOLS];
-
-    await refreshData();
-
-    startPolling();
 }
 
 function startPolling() {
@@ -54,13 +49,34 @@ function startPolling() {
         clearInterval(
             state.updateInterval
         );
+
     }
 
     state.updateInterval =
         setInterval(
-            refreshData,
-            10000
+            refreshMarket,
+            5000
         );
+
+}
+
+async function init() {
+
+    console.log(
+        'Options Pulse Tracker starting...'
+    );
+
+    state.selectedUniverse =
+        [...ALL_FNO_SYMBOLS];
+
+    initUI();
+
+    initFilters();
+
+    await refreshMarket();
+
+    startPolling();
+
 }
 
 document.addEventListener(
