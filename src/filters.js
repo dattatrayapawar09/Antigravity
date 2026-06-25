@@ -1,62 +1,111 @@
 // filters.js
 
 import { state } from './state.js';
+import { generateInitialData } from './market.js';
+import { renderDashboard } from './ui.js';
 
-/**
- * Setup filter UI event listeners.
- * @param {Function} onFrontendFilterChange - callback for client-side filtering
- * @param {Function} onBackendFilterChange - callback for filters that require re-fetching
- */
-export function initFilters(onFrontendFilterChange, onBackendFilterChange) {
-    const volInput = document.getElementById('filter-vol-ratio');
-    volInput?.addEventListener('input', () => {
-        state.filters.volRatio = parseFloat(volInput.value) || 0;
-        onFrontendFilterChange?.();
+export function initFilters() {
+
+    // ----------------------------
+    // Volume Ratio
+    // ----------------------------
+
+    const volRatio =
+        document.getElementById('filter-vol-ratio');
+
+    volRatio?.addEventListener('input', () => {
+
+        state.filters.volRatio =
+            Number(volRatio.value) || 1;
+
+        renderDashboard();
+
     });
 
-    const oiInput = document.getElementById('filter-oi-chg');
-    oiInput?.addEventListener('input', () => {
-        state.filters.oiChg = parseFloat(oiInput.value) || 0;
-        onFrontendFilterChange?.();
+    // ----------------------------
+    // OI Change
+    // ----------------------------
+
+    const oiChange =
+        document.getElementById('filter-oi-chg');
+
+    oiChange?.addEventListener('input', () => {
+
+        state.filters.oiChg =
+            Number(oiChange.value) || 0;
+
+        renderDashboard();
+
     });
 
-    const toggleBtns = document.querySelectorAll('.toggle-btn');
-    toggleBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            toggleBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            state.filters.type = btn.dataset.val || 'ALL';
-            onFrontendFilterChange?.();
+    // ----------------------------
+    // CE / PE
+    // ----------------------------
+
+    document
+        .querySelectorAll('.toggle-btn')
+        .forEach(btn => {
+
+            btn.addEventListener('click', () => {
+
+                document
+                    .querySelectorAll('.toggle-btn')
+                    .forEach(x => x.classList.remove('active'));
+
+                btn.classList.add('active');
+
+                state.filters.type =
+                    btn.dataset.val;
+
+                renderDashboard();
+
+            });
+
         });
+
+    // ----------------------------
+    // Expiry
+    // ----------------------------
+
+    const expiry =
+        document.getElementById('filter-expiry');
+
+    expiry?.addEventListener('change', async () => {
+
+        state.filters.expiry =
+            expiry.value;
+
+        await generateInitialData();
+
+        renderDashboard();
+
     });
 
-    const expirySelect = document.getElementById('filter-expiry');
-    expirySelect?.addEventListener('change', () => {
-        state.filters.expiry = expirySelect.value;
-        onBackendFilterChange?.();
+    // ----------------------------
+    // Universe Multi Select
+    // ----------------------------
+
+    const universe =
+        document.getElementById('filter-universe');
+
+    universe?.addEventListener('change', async () => {
+
+        const selected = [];
+
+        [...universe.options]
+            .forEach(opt => {
+
+                if (opt.selected)
+                    selected.push(opt.value);
+
+            });
+
+        state.selectedUniverse = selected;
+
+        await generateInitialData(selected);
+
+        renderDashboard();
+
     });
-}
 
-/**
- * Apply active filters to a processed data array.
- */
-export function applyFilters(data) {
-    return data.filter(d => {
-        // Universe filter
-        if (!state.selectedUniverse.includes(d.symbol)) return false;
-
-        // Vol ratio
-        if (d.volRatio < (state.filters.volRatio || 0)) return false;
-
-        // OI change %
-        if (Math.abs(d.oiChgPct) < (state.filters.oiChg || 0)) return false;
-
-        // CE/PE type
-        if (state.filters.type !== 'ALL' && d.type !== state.filters.type) return false;
-
-        // Expiry
-        if (state.filters.expiry !== 'ALL' && d.expiry !== state.filters.expiry) return false;
-
-        return true;
-    });
 }
