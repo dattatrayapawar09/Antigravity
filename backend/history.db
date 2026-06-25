@@ -1,0 +1,15 @@
+CREATE TABLE option_history (
+
+id TEXT,
+
+trading_date DATE,
+
+volume INTEGER,
+
+oi INTEGER,
+
+close REAL,
+
+PRIMARY KEY(id,trading_date)
+
+);
