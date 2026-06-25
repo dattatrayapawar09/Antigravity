@@ -504,3 +504,48 @@ def get_contract_debug_info(
 
 def get_cache_status() -> dict[str, Any]:
     return C.get_status()
+
+def get_all_option_contracts() -> list[dict]:
+    """
+    Return every option contract currently loaded in the scrip master.
+    Used by history_service.py.
+    """
+
+    contracts = []
+
+    for underlying, expiry_map in C.options_cache.items():
+
+        for expiry, strike_map in expiry_map.items():
+
+            for strike, option_map in strike_map.items():
+
+                for option_type in ("CE", "PE"):
+
+                    contract = option_map.get(option_type)
+
+                    if contract:
+
+                        contracts.append({
+
+                            "exchange": contract["exch_seg"],
+
+                            "symboltoken": contract["token"],
+
+                            "tradingsymbol": contract["symbol"],
+
+                            "underlying": underlying,
+
+                            "expiry": expiry,
+
+                            "strike": strike,
+
+                            "type": option_type
+
+                        })
+
+    logger.info(
+        "[InstrumentUtils] Returning %d contracts",
+        len(contracts)
+    )
+
+    return contracts
