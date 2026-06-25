@@ -349,17 +349,20 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         )
     )
     
-logger.info("[Options] Returning %d contracts", len(all_options))    
-    # Sort expiries chronologically
-sorted_expiries = IU.sort_expiries(
-    list(available_expiries_set)
+    logger.info(
+        "[Options] Returning %d contracts",
+        len(all_options)
+    )
 
-)
-return OptionsResponse(
-   options=all_options,
-   expiries=sorted_expiries,
-   mode="LIVE",
-)
+    sorted_expiries = IU.sort_expiries(
+        list(available_expiries_set)
+    )
+
+    return OptionsResponse(
+        options=all_options,
+        expiries=sorted_expiries,
+        mode="LIVE",
+    )
 
 # ── POST /api/instruments/avgvol ───────────────────────────────────────────────
 
