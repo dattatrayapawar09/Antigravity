@@ -312,44 +312,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     # ------------------------------------------------------------------
     # Get historical data from SQLite
     # ------------------------------------------------------------------
-    
-    contract_id = f"{contract['underlying']}_{contract['strike']}_{contract['type']}"
-    
-    history = history_db.get_last_5_days(contract_id)
-    
-    historicalVolumes = [
-        h["volume"]
-        for h in history
-    ]
-    
-    avgVol = (
-        int(sum(historicalVolumes) / len(historicalVolumes))
-        if historicalVolumes
-        else max(1, int(volume * 0.75))
-    )
-    
-    previousSessionVolume = (
-        historicalVolumes[-1]
-        if historicalVolumes
-        else max(1, int(volume * 0.85))
-    )
-    
-    previousSessionOi = (
-        history[-1]["oi"]
-        if history
-        else max(1, int(oi * 0.90))
-    )
-    
-    prevPrice = (
-        history[-1]["close"]
-        if history
-        else prev_price
-    )
-    
-    # ------------------------------------------------------------------
-    # Create response object
-    # ------------------------------------------------------------------
-    
+       
     all_options.append(
         OptionContract(
             id=contract_id,
