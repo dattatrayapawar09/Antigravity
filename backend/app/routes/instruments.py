@@ -251,13 +251,35 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                     int(volume * 0.75)
                 ),
                 
-                historicalVolumes=[
-                    int(volume * 0.80),
-                    int(volume * 0.90),
-                    int(volume * 1.10),
-                    int(volume * 0.95),
-                    int(volume * 0.85),
-                ],
+                history = get_last_5_days(contract_id)
+
+                historicalVolumes = [
+                    h["volume"]
+                    for h in history
+                ]
+                
+                avgVol = int(
+                    sum(historicalVolumes) /
+                    len(historicalVolumes)
+                ) if historicalVolumes else volume
+                
+                previousSessionVolume = (
+                    historicalVolumes[-1]
+                    if historicalVolumes
+                    else volume
+                )
+                
+                previousSessionOi = (
+                    history[-1]["oi"]
+                    if history
+                    else oi
+                )
+                
+                prevPrice = (
+                    history[-1]["close"]
+                    if history
+                    else price
+                )
                 
                 previousSessionVolume=int(volume * 0.85),
                 
