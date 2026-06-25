@@ -1,8 +1,11 @@
 """
 history_service.py
 
-Build option history from LIVE option chain.
-Runs once after market close.
+Stores end-of-day option statistics in SQLite.
+
+Runs once daily (after market close).
+
+Uses LIVE SmartAPI quote data.
 """
 
 from __future__ import annotations
@@ -12,45 +15,90 @@ from datetime import date
 
 from app.database import history_db
 from app.smartapi import get_client
-from app.services.instrument_utils import (
-    get_all_option_contracts,
-)
+from app.services.instrument_utils import get_all_option_contracts
 
 logger = logging.getLogger(__name__)
 
 
 async def update_history():
 
+    """
+    Save today's Volume / OI / Close
+    for every option contract.
+    """
+
     client = get_client()
 
     contracts = get_all_option_contracts()
 
+    if not contracts:
+
+        logger.warning(
+            "[History] No option contracts found."
+        )
+
+        return
+
     logger.info(
-        "[History] Saving %d contracts",
+
+        "[History] Fetching %d contracts",
+
         len(contracts)
+
     )
 
     quotes = await client.get_quote(
+
         contracts,
+
         mode="FULL"
+
     )
 
     if not quotes:
+
         logger.warning(
-            "[History] No quote data"
+
+            "[History] Quote request failed."
+
         )
+
         return
 
     today = date.today().isoformat()
+
+    saved = 0
 
     for q in quotes:
 
         try:
 
             contract_id = (
-                f"{q['symbol']}_"
-                f"{q['strike']}_"
-                f"{q['type']}"
+
+                f"{q.get('underlying')}_"
+
+                f"{q.get('strike')}_"
+
+                f"{q.get('type')}"
+
+            )
+
+            volume = int(
+
+                q.get("volume") or 0
+
+            )
+
+            oi = int(
+
+                q.get("opnInterest") or 0
+
+            )
+
+            close = float(
+
+                q.get("ltp") or 0
+
             )
 
             history_db.save_history(
@@ -59,24 +107,30 @@ async def update_history():
 
                 trading_date=today,
 
-                volume=int(
-                    q.get("volume") or 0
-                ),
+                volume=volume,
 
-                oi=int(
-                    q.get("opnInterest") or 0
-                ),
+                oi=oi,
 
-                close=float(
-                    q.get("ltp") or 0
-                )
+                close=close
 
             )
 
+            saved += 1
+
         except Exception as exc:
 
-            logger.exception(exc)
+            logger.exception(
+
+                "[History] %s",
+
+                exc
+
+            )
 
     logger.info(
-        "[History] Database updated"
+
+        "[History] Saved %d contracts",
+
+        saved
+
     )
