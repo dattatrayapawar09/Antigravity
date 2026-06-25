@@ -151,7 +151,15 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 "[Options][SPOT] %s → token=%s — no quote returned",
                 sym, tok["symboltoken"],
             )
+        price = float(q.get("ltp") or 0) if q else 0.0
 
+        prev_price = float(q.get("close") or price) if q else price
+        
+        oi = int(q.get("opnInterest") or 0) if q else 0
+        
+        volume = int(q.get("volume") or 0) if q else 0
+        
+        iv = float(q.get("impliedVol") or 0) if q else 0.0
     # ── Step 2: Build option chains from scrip master ──────────────────────────
     option_tokens_to_fetch: list[dict[str, str]] = []
     token_to_contract_map: dict[str, dict[str, Any]] = {}
