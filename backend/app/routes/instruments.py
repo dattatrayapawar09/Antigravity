@@ -251,82 +251,84 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             if historicalVolumes
             else volume
         )
-        all_options.append(
-            OptionContract(
-                id=f"{contract['underlying']}_{contract['strike']}_{contract['type']}",
-                symbol=contract["underlying"],
-                strike=float(contract["strike"]),
-                type=contract["type"],
-                expiry=contract["expiry"],
-
-                spot=float(contract["spotPrice"]),
-
-                price=price,
-                prevPrice=prev_price,
-
-                volume=volume,
-                avgVol=max(
-                    1,
-                    int(volume * 0.75)
-                ),
-                
-                history = get_last_5_days(contract_id)
-
-                historicalVolumes = [
-                    h["volume"]
-                    for h in history
-                ]
-                
-                avgVol = int(
-                    sum(historicalVolumes) /
-                    len(historicalVolumes)
-                ) if historicalVolumes else volume
-                
-                previousSessionVolume = (
-                    historicalVolumes[-1]
-                    if historicalVolumes
-                    else volume
-                )
-                
-                previousSessionOi = (
-                    history[-1]["oi"]
-                    if history
-                    else oi
-                )
-                
-                prevPrice = (
-                    history[-1]["close"]
-                    if history
-                    else price
-                )
-                
-                previousSessionVolume=int(volume * 0.85),
-                
-                oi=oi,
-                
-                prevOi=max(
-                    1,
-                    int(oi * 0.90)
-                ),
-                
-                previousSessionOi=max(
-                    1,
-                    int(oi * 0.90)
-                ),
-                iv=iv,
-
-                bid=float(q.get("bestBidPrice", 0) or 0),
-                ask=float(q.get("bestAskPrice", 0) or 0),
-
-                spread=max(
-                    0,
-                    float(q.get("bestAskPrice", 0) or 0)
-                    - float(q.get("bestBidPrice", 0) or 0)
-                ),
-            )
+    # ------------------------------------------------------------------
+    # Get historical data from SQLite
+    # ------------------------------------------------------------------
+    
+    contract_id = f"{contract['underlying']}_{contract['strike']}_{contract['type']}"
+    
+    history = history_db.get_last_5_days(contract_id)
+    
+    historicalVolumes = [
+        h["volume"]
+        for h in history
+    ]
+    
+    avgVol = (
+        int(sum(historicalVolumes) / len(historicalVolumes))
+        if historicalVolumes
+        else max(1, int(volume * 0.75))
+    )
+    
+    previousSessionVolume = (
+        historicalVolumes[-1]
+        if historicalVolumes
+        else max(1, int(volume * 0.85))
+    )
+    
+    previousSessionOi = (
+        history[-1]["oi"]
+        if history
+        else max(1, int(oi * 0.90))
+    )
+    
+    prevPrice = (
+        history[-1]["close"]
+        if history
+        else prev_price
+    )
+    
+    # ------------------------------------------------------------------
+    # Create response object
+    # ------------------------------------------------------------------
+    
+    all_options.append(
+        OptionContract(
+            id=contract_id,
+            symbol=contract["underlying"],
+            strike=float(contract["strike"]),
+            type=contract["type"],
+            expiry=contract["expiry"],
+    
+            spot=float(contract["spotPrice"]),
+    
+            price=price,
+            prevPrice=prevPrice,
+    
+            volume=volume,
+            avgVol=avgVol,
+    
+            historicalVolumes=historicalVolumes,
+            previousSessionVolume=previousSessionVolume,
+    
+            oi=oi,
+            prevOi=previousSessionOi,
+            previousSessionOi=previousSessionOi,
+    
+            iv=iv,
+    
+            bid=float(q.get("bestBidPrice", 0) or 0),
+            ask=float(q.get("bestAskPrice", 0) or 0),
+    
+            spread=max(
+                0,
+                float(q.get("bestAskPrice", 0) or 0)
+                - float(q.get("bestBidPrice", 0) or 0)
+            ),
         )
-    logger.info("[Options] Returning %d contracts", len(all_options))
-
+    )
+    
+    logger.info("[Options] Returning %d contracts", len(all_options))    
     # Sort expiries chronologically
     sorted_expiries = IU.sort_expiries(list(available_expiries_set))
 
