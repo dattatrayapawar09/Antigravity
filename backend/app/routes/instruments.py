@@ -232,6 +232,25 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         volume     = int(q.get("volume") or 0) if q else 0
         iv         = float(q.get("impliedVol") or 0) if q else 0.0
 
+        from app.database import history_db
+
+        history = history_db.get_history(
+            contract["underlying"],
+            contract["expiry"],
+            contract["strike"],
+            contract["type"]
+        )
+        
+        historicalVolumes = [
+            row["volume"]
+            for row in history
+        ]
+        
+        avgVol = (
+            int(sum(historicalVolumes) / len(historicalVolumes))
+            if historicalVolumes
+            else volume
+        )
         all_options.append(
             OptionContract(
                 id=f"{contract['underlying']}_{contract['strike']}_{contract['type']}",
