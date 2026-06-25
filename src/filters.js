@@ -109,3 +109,68 @@ export function initFilters() {
     });
 
 }
+
+export function applyFilters(data) {
+
+    return data.filter(option => {
+
+        //----------------------------------
+        // Universe
+        //----------------------------------
+
+        if (
+            state.selectedUniverse.length &&
+            !state.selectedUniverse.includes(option.symbol)
+        ) {
+            return false;
+        }
+
+        //----------------------------------
+        // Volume Ratio
+        //----------------------------------
+
+        if (
+            option.volRatio <
+            state.filters.volRatio
+        ) {
+            return false;
+        }
+
+        //----------------------------------
+        // OI %
+        //----------------------------------
+
+        if (
+            Math.abs(option.oiChgPct) <
+            state.filters.oiChg
+        ) {
+            return false;
+        }
+
+        //----------------------------------
+        // Option Type
+        //----------------------------------
+
+        if (
+            state.filters.type !== 'ALL' &&
+            option.type !== state.filters.type
+        ) {
+            return false;
+        }
+
+        //----------------------------------
+        // Expiry
+        //----------------------------------
+
+        if (
+            state.filters.expiry !== 'ALL' &&
+            option.expiry !== state.filters.expiry
+        ) {
+            return false;
+        }
+
+        return true;
+
+    });
+
+}
