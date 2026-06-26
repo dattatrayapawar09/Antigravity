@@ -512,6 +512,76 @@ def get_cache_status() -> dict[str, Any]:
 
 def get_scanner_contracts() -> list[dict]:
     """
+    Return only contracts required for the scanner.
+
+    • Index -> nearest weekly expiry
+    • Stocks -> nearest monthly expiry
+    • All strikes for now (ATM filtering will be added next)
+    """
+
+    contracts = []
+
+    symbols = INDEX_SYMBOLS + TOP_50_STOCKS
+
+    for symbol in symbols:
+
+        expiries = get_available_expiries(symbol)
+
+        if not expiries:
+            continue
+
+        expiry = expiries[0]
+
+        resolved = resolve_symbol(symbol)
+
+        option_cache = (
+            C.options_cache.get(resolved)
+            or C.options_cache.get(symbol)
+        )
+
+        if not option_cache:
+            continue
+
+        strike_map = option_cache.get(expiry)
+
+        if not strike_map:
+            continue
+
+        for strike, option_map in strike_map.items():
+
+            for option_type in ("CE", "PE"):
+
+                contract = option_map.get(option_type)
+
+                if contract:
+
+                    contracts.append({
+
+                        "exchange": contract["exch_seg"],
+
+                        "symboltoken": contract["token"],
+
+                        "tradingsymbol": contract["symbol"],
+
+                        "underlying": symbol,
+
+                        "expiry": expiry,
+
+                        "strike": strike,
+
+                        "type": option_type,
+
+                    })
+
+    logger.info(
+        "[Scanner] %d contracts selected",
+        len(contracts)
+    )
+
+    return contracts
+
+def get_scanner_contracts() -> list[dict]:
+    """
     Return only the contracts required by the scanner.
 
     - Index options -> nearest weekly expiry
