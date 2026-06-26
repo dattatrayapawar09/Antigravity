@@ -1,136 +1,158 @@
 """
 history_service.py
 
-Stores end-of-day option statistics in SQLite.
+Downloads daily historical candle data for option contracts
+and stores the latest 5 trading sessions in SQLite.
 
-Runs once daily (after market close).
-
-Uses LIVE SmartAPI quote data.
+Used by scheduler.py once per day.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import date
+from datetime import datetime, timedelta
+from typing import List
 
 from app.database import history_db
 from app.smartapi import get_client
-from app.services.instrument_utils import get_all_option_contracts
+from app.services import instrument_utils as IU
 
 logger = logging.getLogger(__name__)
 
+# ----------------------------------------------------
+# Settings
+# ----------------------------------------------------
 
-async def update_history():
+MAX_CONCURRENT_REQUESTS = 10
 
+INTERVAL = "ONE_DAY"
+
+LOOKBACK_DAYS = 10
+
+semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+
+
+# ----------------------------------------------------
+# Date Helpers
+# ----------------------------------------------------
+
+def get_date_range():
     """
-    Save today's Volume / OI / Close
-    for every option contract.
+    Returns from_date and to_date
+    suitable for Angel Historical API.
     """
 
-    client = get_client()
+    today = datetime.now()
 
-    contracts = get_all_option_contracts()
+    start = today - timedelta(days=LOOKBACK_DAYS)
 
-    if not contracts:
+    from_date = start.strftime("%Y-%m-%d 09:15")
 
-        logger.warning(
-            "[History] No option contracts found."
+    to_date = today.strftime("%Y-%m-%d 15:30")
+
+    return from_date, to_date
+
+
+# ----------------------------------------------------
+# Download one contract
+# ----------------------------------------------------
+
+async def download_contract_history(contract: dict):
+
+    async with semaphore:
+
+        client = get_client()
+
+        contract_id = (
+            f"{contract['underlying']}_"
+            f"{contract['strike']}_"
+            f"{contract['type']}"
         )
 
-        return
+        from_date, to_date = get_date_range()
 
-    logger.info(
-
-        "[History] Fetching %d contracts",
-
-        len(contracts)
-
-    )
-
-    quotes = await client.get_quote(
-
-        contracts,
-
-        mode="FULL"
-
-    )
-
-    if not quotes:
-
-        logger.warning(
-
-            "[History] Quote request failed."
-
+        logger.info(
+            "[History] Downloading %s",
+            contract_id
         )
 
+        candles = await client.get_historical_data(
+            exchange=contract["exch_seg"],
+            symboltoken=contract["token"],
+            interval=INTERVAL,
+            from_date=from_date,
+            to_date=to_date,
+        )
+
+        if not candles:
+            logger.warning(
+                "[History] No candles for %s",
+                contract_id
+            )
+            return
+
+        save_history(contract_id, candles)
+# ----------------------------------------------------
+# Save candles into SQLite
+# ----------------------------------------------------
+
+def save_history(contract_id: str, candles: list):
+
+    if not candles:
         return
 
-    today = date.today().isoformat()
+    # Keep only latest 5 sessions
+    candles = candles[-5:]
 
-    saved = 0
-
-    for q in quotes:
+    for candle in candles:
 
         try:
 
-            contract_id = (
-
-                f"{q.get('underlying')}_"
-
-                f"{q.get('strike')}_"
-
-                f"{q.get('type')}"
-
-            )
-
-            volume = int(
-
-                q.get("volume") or 0
-
-            )
-
-            oi = int(
-
-                q.get("opnInterest") or 0
-
-            )
-
-            close = float(
-
-                q.get("ltp") or 0
-
-            )
+            trade_date = candle["datetime"][:10]
 
             history_db.save_history(
-
                 contract_id=contract_id,
-
-                trading_date=today,
-
-                volume=volume,
-
-                oi=oi,
-
-                close=close
-
+                trade_date=trade_date,
+                volume=int(candle["volume"]),
+                close=float(candle["close"]),
+                oi=0      # Historical API doesn't return OI
             )
 
-            saved += 1
-
-        except Exception as exc:
+        except Exception as e:
 
             logger.exception(
-
-                "[History] %s",
-
-                exc
-
+                "[History] SQLite insert failed %s : %s",
+                contract_id,
+                e
             )
 
     logger.info(
-
-        "[History] Saved %d contracts",
-
-        saved
-
+        "[History] Saved %d candles for %s",
+        len(candles),
+        contract_id
     )
+
+    cleanup_history(contract_id)
+
+
+# ----------------------------------------------------
+# Keep only latest 5 rows
+# ----------------------------------------------------
+
+def cleanup_history(contract_id: str):
+
+    try:
+
+        history_db.delete_old_history(
+            contract_id=contract_id,
+            keep_last=5
+        )
+
+    except Exception as e:
+
+        logger.exception(
+            "[History] Cleanup failed %s : %s",
+            contract_id,
+            e
+        )
