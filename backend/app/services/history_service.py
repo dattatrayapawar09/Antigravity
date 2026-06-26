@@ -88,7 +88,16 @@ async def download_contract_history(contract: dict):
             from_date=from_date,
             to_date=to_date,
         )
-
+    exchange = contract.get("exch_seg") or contract.get("exchange")
+    token = contract.get("token") or contract.get("symboltoken")
+    
+    candles = await client.get_historical_data(
+        exchange=exchange,
+        symboltoken=token,
+        interval=INTERVAL,
+        from_date=from_date,
+        to_date=to_date,
+    )
         if not candles:
             logger.warning(
                 "[History] No candles for %s",
