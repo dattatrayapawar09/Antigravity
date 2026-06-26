@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.models import AvgVolResponse, OptionContract, OptionsRequest, OptionsResponse, SpotPricesResponse, SymbolsRequest
 from app.services import instrument_utils as IU
