@@ -133,7 +133,7 @@ def save_history(contract_id: str, candles: list):
         contract_id
     )
 
-    cleanup_history(contract_id)
+    history_db.cleanup(contract_id)
 
 
 # ----------------------------------------------------
