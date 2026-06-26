@@ -19,7 +19,9 @@ from app.config import Settings
 logger = logging.getLogger(__name__)
 
 _ANGEL_BASE = "https://apiconnect.angelone.in"
-
+_HISTORICAL_API = (
+    f"{_ANGEL_BASE}/rest/secure/angelbroking/historical/v1/getCandleData"
+)
 # Token validity: 6 hours (Angel One sessions expire at midnight IST; 6 h is safe)
 _TOKEN_TTL_SEC = 6 * 60 * 60
 
@@ -188,9 +190,125 @@ class SmartAPIClient:
             logger.error("[SmartAPI] LTP error: %s", exc)
             return None
 
-    async def get_option_chain(
-        self, symbol: str, expiry_date: str, strike_price: float
-    ) -> Optional[dict[str, Any]]:
+               async def get_historical_data(
+        self,
+        exchange: str,
+        symboltoken: str,
+        interval: str,
+        from_date: str,
+        to_date: str,
+    ) -> list[dict]:
+
+        """
+        Download historical candle data.
+
+        Returns:
+
+        [
+            {
+                "datetime": "...",
+                "open": ...,
+                "high": ...,
+                "low": ...,
+                "close": ...,
+                "volume": ...
+            }
+        ]
+        """
+
+        auth = await self.ensure_authenticated()
+
+        if not auth["success"]:
+            return []
+
+        try:
+
+            async with httpx.AsyncClient(
+                timeout=20.0
+            ) as client:
+
+                response = await client.post(
+
+                    _HISTORICAL_API,
+
+                    json={
+
+                        "exchange": exchange,
+
+                        "symboltoken": symboltoken,
+
+                        "interval": interval,
+
+                        "fromdate": from_date,
+
+                        "todate": to_date,
+
+                    },
+
+                    headers=self._base_headers(
+                        with_auth=True
+                    ),
+
+                )
+
+            data = response.json()
+
+            if not data.get("status"):
+
+                logger.warning(
+
+                    "[Historical] %s",
+
+                    data.get("message"),
+
+                )
+
+                return []
+
+            candles = data.get("data", [])
+
+            results = []
+
+            for candle in candles:
+
+                #
+                # Angel returns:
+                # [datetime, open, high, low, close, volume]
+                #
+
+                results.append(
+
+                    {
+
+                        "datetime": candle[0],
+
+                        "open": float(candle[1]),
+
+                        "high": float(candle[2]),
+
+                        "low": float(candle[3]),
+
+                        "close": float(candle[4]),
+
+                        "volume": int(candle[5]),
+
+                    }
+
+                )
+
+            return results
+
+        except Exception as e:
+
+            logger.exception(
+
+                "[Historical] %s",
+
+                e,
+
+            )
+
+            return []
         """Fetch option chain from Angel One derivatives endpoint."""
         auth = await self.ensure_authenticated()
         if not auth["success"]:
