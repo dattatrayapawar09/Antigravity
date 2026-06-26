@@ -129,38 +129,26 @@ async def download_contract_history(contract: dict):
             contract_id
         )
 
+        exchange = contract.get("exch_seg") or contract.get("exchange")
+        token = contract.get("token") or contract.get("symboltoken")
+
         candles = await client.get_historical_data(
-            exchange=contract["exch_seg"],
-            symboltoken=contract["token"],
+            exchange=exchange,
+            symboltoken=token,
             interval=INTERVAL,
             from_date=from_date,
             to_date=to_date,
         )
-    exchange = contract.get("exch_seg") or contract.get("exchange")
-    token = contract.get("token") or contract.get("symboltoken")
-    
-    candles = await client.get_historical_data(
-        exchange=exchange,
-        symboltoken=token,
-        interval=INTERVAL,
-        from_date=from_date,
-        to_date=to_date,
-    )
+
         if not candles:
             logger.warning(
                 "[History] No candles for %s",
-                contract_id
+                contract_id,
             )
             return
 
         save_history(contract_id, candles)
-# ----------------------------------------------------
-# Save candles into SQLite
-# ----------------------------------------------------
-
-def save_history(contract_id: str, candles: list):
-
-    if not candles:
+            if not candles:
         return
 
     # Keep only latest 5 sessions
