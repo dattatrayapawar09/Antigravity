@@ -309,9 +309,6 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             )
         )
 
-    # ------------------------------------------------------------------
-    # Get historical data from SQLite
-    # ------------------------------------------------------------------
        
     all_options.append(
         OptionContract(
