@@ -156,3 +156,77 @@ def cleanup_history(contract_id: str):
             contract_id,
             e
         )
+
+# ----------------------------------------------------
+# Download history for every option contract
+# ----------------------------------------------------
+
+async def update_all_option_history():
+
+    logger.info(
+        "[History] Starting historical download..."
+    )
+
+    contracts = IU.get_all_option_contracts()
+
+    if not contracts:
+        logger.warning(
+            "[History] No option contracts available."
+        )
+        return
+
+    logger.info(
+        "[History] %d contracts found",
+        len(contracts)
+    )
+
+    tasks = [
+        download_contract_history(contract)
+        for contract in contracts
+    ]
+
+    completed = 0
+
+    for future in asyncio.as_completed(tasks):
+
+        try:
+            await future
+
+        except Exception as e:
+
+            logger.exception(
+                "[History] Worker failed : %s",
+                e
+            )
+
+        completed += 1
+
+        if completed % 500 == 0:
+
+            logger.info(
+                "[History] Progress : %d / %d",
+                completed,
+                len(tasks)
+            )
+
+    logger.info(
+        "[History] Historical download completed."
+    )
+
+
+# ----------------------------------------------------
+# Scheduler Entry Point
+# ----------------------------------------------------
+
+async def run_daily_history_update():
+
+    try:
+
+        await update_all_option_history()
+
+    except Exception as e:
+
+        logger.exception(
+            "[History] Daily update failed : %s",
+            e
+        )
