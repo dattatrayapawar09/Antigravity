@@ -21,6 +21,11 @@ from typing import Any, Optional
 import httpx
 
 from app.services import cache as C
+from app.config.scanner_config import (
+    INDEX_SYMBOLS,
+    TOP_50_STOCKS,
+    STRIKE_RANGE,
+)
 
 logger = logging.getLogger(__name__)
 
