@@ -547,9 +547,49 @@ def get_scanner_contracts() -> list[dict]:
         if not strike_map:
             continue
 
-        for strike, option_map in strike_map.items():
+        strikes = sorted(strike_map.keys())
 
+        #
+        # TEMPORARY spot
+        #
+        # We will replace this with live spot in Step 4.
+        #
+        
+        spot_price = strikes[len(strikes) // 2]
+        
+        selected_strikes = get_nearest_strikes(
+            strikes,
+            spot_price,
+            STRIKE_RANGE,
+        )
+        
+        for strike in selected_strikes:
+        
+            option_map = strike_map[strike]
+        
             for option_type in ("CE", "PE"):
+        
+                contract = option_map.get(option_type)
+        
+                if contract:
+        
+                    contracts.append({
+        
+                        "exchange": contract["exch_seg"],
+        
+                        "symboltoken": contract["token"],
+        
+                        "tradingsymbol": contract["symbol"],
+        
+                        "underlying": symbol,
+        
+                        "expiry": expiry,
+        
+                        "strike": strike,
+        
+                        "type": option_type,
+        
+                    })
 
                 contract = option_map.get(option_type)
 
