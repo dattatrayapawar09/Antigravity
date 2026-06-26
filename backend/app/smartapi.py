@@ -1,9 +1,7 @@
 """
 smartapi.py — Async Angel One SmartAPI client for AntiGravity backend.
-
-Translated from backend/smartapi.js.  Uses httpx.AsyncClient for all I/O.
-TOTP is generated with pyotp (standard TOTP RFC 6238 — same as totp-generator).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,232 +16,460 @@ from app.config import Settings
 
 logger = logging.getLogger(__name__)
 
+# ------------------------------------------------------------------
+# Constants
+# ------------------------------------------------------------------
+
 _ANGEL_BASE = "https://apiconnect.angelone.in"
+
 _HISTORICAL_API = (
     f"{_ANGEL_BASE}/rest/secure/angelbroking/historical/v1/getCandleData"
 )
-# Token validity: 6 hours (Angel One sessions expire at midnight IST; 6 h is safe)
+
 _TOKEN_TTL_SEC = 6 * 60 * 60
 
-# Lock so only one login happens at a time
 _login_lock = asyncio.Lock()
 
+
+# ------------------------------------------------------------------
+# SmartAPI Client
+# ------------------------------------------------------------------
 
 class SmartAPIClient:
     """Async Angel One SmartAPI wrapper."""
 
     def __init__(self, settings: Settings) -> None:
-        self._api_key     = settings.angel_api_key
-        self._client_id   = settings.angel_client_id
-        self._password    = settings.angel_password
+
+        self._api_key = settings.angel_api_key
+        self._client_id = settings.angel_client_id
+        self._password = settings.angel_password
         self._totp_secret = settings.angel_totp_secret
 
-        self.jwt_token:     Optional[str] = None
-        self.feed_token:    Optional[str] = None
+        self.jwt_token: Optional[str] = None
+        self.feed_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
-        self.token_expiry:  float = 0.0   # unix timestamp
 
-        logger.info("[SmartAPI] ✅ Credentials loaded for client: %s", self._client_id)
+        self.token_expiry = 0.0
 
-    # ── Internal helpers ────────────────────────────────────────────────────────
+        logger.info(
+            "[SmartAPI] Client initialised : %s",
+            self._client_id,
+        )
+
+    # --------------------------------------------------------------
 
     def _generate_totp(self) -> str:
+
         try:
-            code = pyotp.TOTP(self._totp_secret).now()
-            logger.debug("[SmartAPI] TOTP generated: %s", code)
-            return code
-        except Exception as exc:
-            logger.error("[SmartAPI] TOTP generation error: %s", exc)
+
+            return pyotp.TOTP(
+                self._totp_secret
+            ).now()
+
+        except Exception as e:
+
+            logger.exception(e)
+
             return "000000"
 
-    def _base_headers(self, *, with_auth: bool = False) -> dict[str, str]:
-        h: dict[str, str] = {
-            "Content-Type":      "application/json",
-            "Accept":            "application/json",
-            "X-UserType":        "USER",
-            "X-SourceID":        "WEB",
-            "X-ClientLocalIP":   "127.0.0.1",
-            "X-ClientPublicIP":  "127.0.0.1",
-            "X-MACAddress":      "00:00:00:00:00:00",
-            "X-PrivateKey":      self._api_key,
+    # --------------------------------------------------------------
+
+    def _base_headers(
+        self,
+        *,
+        with_auth: bool = False,
+    ) -> dict[str, str]:
+
+        headers = {
+
+            "Content-Type": "application/json",
+
+            "Accept": "application/json",
+
+            "X-UserType": "USER",
+
+            "X-SourceID": "WEB",
+
+            "X-ClientLocalIP": "127.0.0.1",
+
+            "X-ClientPublicIP": "127.0.0.1",
+
+            "X-MACAddress": "00:00:00:00:00:00",
+
+            "X-PrivateKey": self._api_key,
+
         }
+
         if with_auth and self.jwt_token:
-            h["Authorization"] = f"Bearer {self.jwt_token}"
-        return h
+
+            headers["Authorization"] = (
+                f"Bearer {self.jwt_token}"
+            )
+
+        return headers
+
+    # --------------------------------------------------------------
 
     def _group_by_exchange(
-        self, instruments: list[dict[str, str]]
+        self,
+        instruments: list[dict[str, str]],
     ) -> dict[str, list[str]]:
+
         grouped: dict[str, list[str]] = {}
-        for instr in instruments:
-            exch = instr.get("exchange", "NSE")
-            tok  = instr.get("symboltoken", "")
-            grouped.setdefault(exch, []).append(tok)
+
+        for instrument in instruments:
+
+            exchange = instrument.get(
+                "exchange",
+                "NSE",
+            )
+
+            token = instrument.get(
+                "symboltoken",
+                "",
+            )
+
+            grouped.setdefault(
+                exchange,
+                [],
+            ).append(token)
+
         return grouped
 
-    # ── Public API ──────────────────────────────────────────────────────────────
+    # --------------------------------------------------------------
 
     def is_token_valid(self) -> bool:
-        return bool(self.jwt_token and time.time() < self.token_expiry)
+
+        return (
+
+            self.jwt_token is not None
+
+            and
+
+            time.time() < self.token_expiry
+
+        )
+
+    # --------------------------------------------------------------
 
     async def login(self) -> dict[str, Any]:
-        """Authenticate with Angel One SmartAPI. Returns {success, reason?}."""
-        async with _login_lock:
-            if self.is_token_valid():
-                return {"success": True}
 
-            totp_code = self._generate_totp()
+        async with _login_lock:
+
+            if self.is_token_valid():
+
+                return {
+                    "success": True
+                }
+
+            totp = self._generate_totp()
+
             logger.info(
-                "[SmartAPI] Attempting login for client: %s TOTP: %s",
-                self._client_id, totp_code,
+                "[SmartAPI] Login..."
             )
 
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.post(
+
+                async with httpx.AsyncClient(
+                    timeout=15
+                ) as client:
+
+                    response = await client.post(
+
                         f"{_ANGEL_BASE}/rest/auth/angelbroking/user/v1/loginByPassword",
+
                         json={
+
                             "clientcode": self._client_id,
-                            "password":   self._password,
-                            "totp":       totp_code,
+
+                            "password": self._password,
+
+                            "totp": totp,
+
                         },
+
                         headers=self._base_headers(),
+
                     )
-                    data = resp.json()
 
-                logger.info("[SmartAPI] Login response status: %s", data.get("status"))
-                logger.info("[SmartAPI] Login response message: %s", data.get("message"))
+                data = response.json()
 
-                if data.get("status") and data.get("data", {}).get("jwtToken"):
-                    d = data["data"]
-                    self.jwt_token     = d["jwtToken"]
-                    self.feed_token    = d.get("feedToken")
-                    self.refresh_token = d.get("refreshToken")
-                    self.token_expiry  = time.time() + _TOKEN_TTL_SEC
-                    logger.info("[SmartAPI] ✅ Login successful! LIVE MODE active.")
-                    return {"success": True}
+                if (
 
-                msg = data.get("message") or "Login failed — no JWT in response"
-                logger.error("[SmartAPI] ❌ Login failed: %s", msg)
-                return {"success": False, "reason": msg}
+                    data.get("status")
 
-            except Exception as exc:
-                msg = str(exc)
-                logger.error("[SmartAPI] ❌ Login HTTP error: %s", msg)
-                return {"success": False, "reason": msg}
+                    and
 
-    async def ensure_authenticated(self) -> dict[str, Any]:
+                    data.get("data", {}).get("jwtToken")
+
+                ):
+
+                    auth = data["data"]
+
+                    self.jwt_token = auth["jwtToken"]
+
+                    self.feed_token = auth.get(
+                        "feedToken"
+                    )
+
+                    self.refresh_token = auth.get(
+                        "refreshToken"
+                    )
+
+                    self.token_expiry = (
+                        time.time()
+                        + _TOKEN_TTL_SEC
+                    )
+
+                    logger.info(
+                        "[SmartAPI] Login successful."
+                    )
+
+                    return {
+                        "success": True
+                    }
+
+                logger.error(
+                    data.get("message")
+                )
+
+                return {
+
+                    "success": False,
+
+                    "reason": data.get("message"),
+
+                }
+
+            except Exception as e:
+
+                logger.exception(e)
+
+                return {
+
+                    "success": False,
+
+                    "reason": str(e),
+
+                }
+
+    # --------------------------------------------------------------
+
+    async def ensure_authenticated(
+        self,
+    ) -> dict[str, Any]:
+
         if not self.is_token_valid():
+
             return await self.login()
-        return {"success": True}
+
+        return {
+            "success": True
+        }
+
+    # --------------------------------------------------------------
 
     async def get_quote(
-        self, instruments: list[dict[str, str]], mode: str = "FULL"
-    ) -> Optional[dict[str, Any]]:
-        """
-        Fetch market quotes.
-        instruments: [{"exchange": "NSE", "symboltoken": "26000"}, ...]
-        mode: "LTP" | "OHLC" | "FULL"
-        """
+
+        self,
+
+        instruments: list[dict[str, str]],
+
+        mode: str = "FULL",
+
+    ) -> Optional[dict]:
+
         auth = await self.ensure_authenticated()
+
         if not auth["success"]:
+
             return None
 
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.post(
+
+            async with httpx.AsyncClient(
+                timeout=8
+            ) as client:
+
+                response = await client.post(
+
                     f"{_ANGEL_BASE}/rest/secure/angelbroking/market/v1/quote/",
+
                     json={
-                        "mode":           mode,
-                        "exchangeTokens": self._group_by_exchange(instruments),
+
+                        "mode": mode,
+
+                        "exchangeTokens": self._group_by_exchange(
+                            instruments
+                        ),
+
                     },
-                    headers=self._base_headers(with_auth=True),
+
+                    headers=self._base_headers(
+                        with_auth=True
+                    ),
+
                 )
-                data = resp.json()
-                return data.get("data")
-        except Exception as exc:
-            logger.error("[SmartAPI] Quote error: %s", exc)
+
+            data = response.json()
+
+            return data.get("data")
+
+        except Exception as e:
+
+            logger.exception(e)
+
             return None
+
+    # --------------------------------------------------------------
+    # LTP API
+    # --------------------------------------------------------------
 
     async def get_ltp_data(
-        self, exchange: str, tradingsymbol: str, symboltoken: str
+        self,
+        exchange: str,
+        tradingsymbol: str,
+        symboltoken: str,
     ) -> Optional[dict[str, Any]]:
-        """Fetch single-instrument LTP via the getLtpData endpoint."""
+
         auth = await self.ensure_authenticated()
+
         if not auth["success"]:
             return None
 
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.post(
+
+            async with httpx.AsyncClient(timeout=8.0) as client:
+
+                response = await client.post(
+
                     f"{_ANGEL_BASE}/rest/secure/angelbroking/order/v1/getLtpData",
+
                     json={
-                        "exchange":       exchange,
-                        "tradingsymbol":  tradingsymbol,
-                        "symboltoken":    symboltoken,
+
+                        "exchange": exchange,
+
+                        "tradingsymbol": tradingsymbol,
+
+                        "symboltoken": symboltoken,
+
                     },
-                    headers=self._base_headers(with_auth=True),
+
+                    headers=self._base_headers(
+                        with_auth=True
+                    ),
+
                 )
-                data = resp.json()
-                return data.get("data")
-        except Exception as exc:
-            logger.error("[SmartAPI] LTP error: %s", exc)
+
+            data = response.json()
+
+            return data.get("data")
+
+        except Exception as e:
+
+            logger.exception(
+                "[SmartAPI] LTP Error : %s",
+                e,
+            )
+
             return None
 
-               async def get_historical_data(
+    # --------------------------------------------------------------
+    # Option Chain API
+    # --------------------------------------------------------------
+
+    async def get_option_chain(
+        self,
+        symbol: str,
+        expiry_date: str,
+        strike_price: float,
+    ) -> Optional[dict[str, Any]]:
+
+        auth = await self.ensure_authenticated()
+
+        if not auth["success"]:
+            return None
+
+        try:
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+
+                response = await client.post(
+
+                    f"{_ANGEL_BASE}/rest/secure/angelbroking/derivatives/v1/optionchain",
+
+                    json={
+
+                        "name": symbol,
+
+                        "expirydate": expiry_date,
+
+                        "strikePrice": strike_price,
+
+                        "optionType": "CE PE",
+
+                    },
+
+                    headers=self._base_headers(
+                        with_auth=True
+                    ),
+
+                )
+
+            data = response.json()
+
+            return data.get("data")
+
+        except Exception as e:
+
+            logger.exception(
+                "[SmartAPI] OptionChain Error : %s",
+                e,
+            )
+
+            return None
+
+    # --------------------------------------------------------------
+    # Historical Candle API
+    # --------------------------------------------------------------
+
+    async def get_historical_data(
         self,
         exchange: str,
         symboltoken: str,
         interval: str,
         from_date: str,
         to_date: str,
-    ) -> list[dict]:
-
-        """
-        Download historical candle data.
-
-        Returns:
-
-        [
-            {
-                "datetime": "...",
-                "open": ...,
-                "high": ...,
-                "low": ...,
-                "close": ...,
-                "volume": ...
-            }
-        ]
-        """
+    ) -> Optional[list[dict[str, Any]]]:
 
         auth = await self.ensure_authenticated()
 
         if not auth["success"]:
-            return []
+            return None
+
+        payload = {
+
+            "exchange": exchange,
+
+            "symboltoken": symboltoken,
+
+            "interval": interval,
+
+            "fromdate": from_date,
+
+            "todate": to_date,
+
+        }
 
         try:
 
-            async with httpx.AsyncClient(
-                timeout=20.0
-            ) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
 
                 response = await client.post(
 
                     _HISTORICAL_API,
 
-                    json={
-
-                        "exchange": exchange,
-
-                        "symboltoken": symboltoken,
-
-                        "interval": interval,
-
-                        "fromdate": from_date,
-
-                        "todate": to_date,
-
-                    },
+                    json=payload,
 
                     headers=self._base_headers(
                         with_auth=True
@@ -263,40 +489,41 @@ class SmartAPIClient:
 
                 )
 
-                return []
+                return None
 
-            candles = data.get("data", [])
+            candles = []
 
-            results = []
+            for row in data.get("data", []):
 
-            for candle in candles:
-
-                #
-                # Angel returns:
-                # [datetime, open, high, low, close, volume]
-                #
-
-                results.append(
+                candles.append(
 
                     {
 
-                        "datetime": candle[0],
+                        "datetime": row[0],
 
-                        "open": float(candle[1]),
+                        "open": float(row[1]),
 
-                        "high": float(candle[2]),
+                        "high": float(row[2]),
 
-                        "low": float(candle[3]),
+                        "low": float(row[3]),
 
-                        "close": float(candle[4]),
+                        "close": float(row[4]),
 
-                        "volume": int(candle[5]),
+                        "volume": int(row[5]),
 
                     }
 
                 )
 
-            return results
+            logger.info(
+
+                "[Historical] %d candles downloaded",
+
+                len(candles),
+
+            )
+
+            return candles
 
         except Exception as e:
 
@@ -308,127 +535,30 @@ class SmartAPIClient:
 
             )
 
-            return []
-        """Fetch option chain from Angel One derivatives endpoint."""
-        auth = await self.ensure_authenticated()
-        if not auth["success"]:
             return None
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    f"{_ANGEL_BASE}/rest/secure/angelbroking/derivatives/v1/optionchain",
-                    json={
-                        "name":        symbol,
-                        "expirydate":  expiry_date,
-                        "strikePrice": strike_price,
-                        "optionType":  "CE PE",
-                    },
-                    headers=self._base_headers(with_auth=True),
-                )
-                data = resp.json()
-                return data.get("data")
-        except Exception as exc:
-            logger.error("[SmartAPI] OptionChain error: %s", exc)
-            return None
-    async def get_historical_data(
-        self,
-        exchange: str,
-        symboltoken: str,
-        interval: str,
-        from_date: str,
-        to_date: str,
-    ) -> Optional[list[dict[str, Any]]]:
-        """
-        Fetch historical candle data.
+# ------------------------------------------------------------------
+# Module Singleton
+# ------------------------------------------------------------------
 
-        Returns list like:
-
-        [
-            {
-                "datetime": "...",
-                "open": ...,
-                "high": ...,
-                "low": ...,
-                "close": ...,
-                "volume": ...
-            }
-        ]
-        """
-
-        auth = await self.ensure_authenticated()
-        if not auth["success"]:
-            return None
-
-        try:
-            payload = {
-                "exchange": exchange,
-                "symboltoken": symboltoken,
-                "interval": interval,
-                "fromdate": from_date,
-                "todate": to_date,
-            }
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(
-                    f"{_ANGEL_BASE}/rest/secure/angelbroking/historical/v1/getCandleData",
-                    json=payload,
-                    headers=self._base_headers(with_auth=True),
-                )
-
-                data = resp.json()
-
-            if not data.get("status"):
-                logger.warning(
-                    "[Historical] %s",
-                    data.get("message")
-                )
-                return None
-
-            candles = data.get("data", [])
-
-            result = []
-
-            for row in candles:
-
-                result.append(
-                    {
-                        "datetime": row[0],
-                        "open": float(row[1]),
-                        "high": float(row[2]),
-                        "low": float(row[3]),
-                        "close": float(row[4]),
-                        "volume": int(row[5]),
-                    }
-                )
-
-            logger.info(
-                "[Historical] %s candles fetched",
-                len(result)
-            )
-
-            return result
-
-        except Exception as e:
-
-            logger.exception(
-                "[Historical] Error : %s",
-                e
-            )
-
-            return None
-
-# ── Module-level singleton (created during lifespan) ───────────────────────────
 _client: Optional[SmartAPIClient] = None
 
 
 def init_client(settings: Settings) -> SmartAPIClient:
+
     global _client
+
     _client = SmartAPIClient(settings)
+
     return _client
 
 
 def get_client() -> SmartAPIClient:
+
     if _client is None:
-        raise RuntimeError("SmartAPIClient not initialised — call init_client() first")
+
+        raise RuntimeError(
+            "SmartAPIClient not initialised."
+        )
+
     return _client
