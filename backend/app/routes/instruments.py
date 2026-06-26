@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from app.models import AvgVolResponse, OptionContract, OptionsRequest, OptionsResponse, SpotPricesResponse, SymbolsRequest
 from app.services import instrument_utils as IU
 from app.smartapi import get_client
+from app.database import history_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/instruments", tags=["instruments"])
@@ -234,8 +235,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         volume = int(q.get("volume") or 0) if q else 0
         
         iv = float(q.get("impliedVol") or 0) if q else 0.0
-        from app.database import history_db
-
+        
         contract_id = (
             f"{contract['underlying']}_"
             f"{contract['strike']}_"
