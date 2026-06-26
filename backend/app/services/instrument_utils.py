@@ -555,7 +555,6 @@ def get_scanner_contracts() -> list[dict]:
         # We will replace this with live spot in Step 4.
         #
         
-        spot_price = strikes[len(strikes) // 2]
         
         selected_strikes = get_nearest_strikes(
             strikes,
