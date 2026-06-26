@@ -17,7 +17,11 @@ from typing import List
 from app.database import history_db
 from app.smartapi import get_client
 from app.services import instrument_utils as IU
-
+from app.config.scanner_config import (
+    INDEX_SYMBOLS,
+    TOP_50_STOCKS,
+    STRIKE_RANGE,
+)
 logger = logging.getLogger(__name__)
 
 # ----------------------------------------------------
