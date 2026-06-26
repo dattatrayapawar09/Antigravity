@@ -206,6 +206,12 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     for instr in option_tokens_to_fetch:
         key      = _token_key(instr["symboltoken"])
         q        = option_quotes.get(key)
+        import json
+
+        logger.info(
+            "[OPTION QUOTE] %s",
+            json.dumps(q, indent=2, default=str)
+        )
         contract = token_to_contract_map.get(key)
         logger.info(q)
         if not contract:
