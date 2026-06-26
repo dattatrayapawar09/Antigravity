@@ -146,11 +146,26 @@ async def download_contract_history(contract: dict):
                 contract_id,
             )
             return
-
         save_history(contract_id, candles)
         if not candles:
+            logger.warning(
+                "[History] No candles for %s",
+                contract_id,
+            )
+            return
+
+        save_history(contract_id, candles)
+
+# ----------------------------------------------------
+# Save candles into SQLite
+# ----------------------------------------------------
+
+def save_history(contract_id: str, candles: list):
+
+    if not candles:
         return
 
+    # Keep only latest 5 sessions
     # Keep only latest 5 sessions
     candles = candles[-5:]
 
