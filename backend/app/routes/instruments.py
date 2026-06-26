@@ -298,14 +298,15 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         
                 iv=iv,
         
-                bid=float(q.get("bestBidPrice", 0) or 0),
-                ask=float(q.get("bestAskPrice", 0) or 0),
-        
+                bid=float(q.get("bestBidPrice", 0) if q else 0),
+
+                ask=float(q.get("bestAskPrice", 0) if q else 0),
+                
                 spread=max(
                     0,
-                    float(q.get("bestAskPrice", 0) or 0)
-                    - float(q.get("bestBidPrice", 0) or 0)
-                ),
+                    float(q.get("bestAskPrice", 0) if q else 0)
+                    - float(q.get("bestBidPrice", 0) if q else 0)
+                ),               
             )
         )
     
