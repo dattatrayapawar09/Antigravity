@@ -207,6 +207,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         key      = _token_key(instr["symboltoken"])
         q        = option_quotes.get(key)
         contract = token_to_contract_map.get(key)
+        logger.info(q)
         if not contract:
             continue
 
