@@ -1,10 +1,10 @@
 """
 history_service.py
 
-Downloads daily historical candle data for option contracts
-and stores the latest 5 trading sessions in SQLite.
+Downloads historical option data from Angel One and stores the
+last 5 trading sessions in SQLite.
 
-Used by scheduler.py once per day.
+Production Version
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import List
+from typing import Any
 
 from app.database import history_db
 from app.smartapi import get_client
@@ -22,41 +22,89 @@ from app.config.scanner_config import (
     TOP_50_STOCKS,
     STRIKE_RANGE,
 )
+
 logger = logging.getLogger(__name__)
 
 # ----------------------------------------------------
-# Settings
+# Configuration
 # ----------------------------------------------------
-
-MAX_CONCURRENT_REQUESTS = 10
 
 INTERVAL = "ONE_DAY"
 
 LOOKBACK_DAYS = 10
 
-semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+MAX_CONCURRENT_REQUESTS = 8
 
+MAX_RETRIES = 3
+
+RETRY_DELAY = 1
+
+semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
 # ----------------------------------------------------
 # Date Helpers
 # ----------------------------------------------------
 
-def get_date_range():
+def get_date_range() -> tuple[str, str]:
     """
-    Returns from_date and to_date
-    suitable for Angel Historical API.
+    Return date range for historical API.
     """
 
     today = datetime.now()
 
     start = today - timedelta(days=LOOKBACK_DAYS)
 
-    from_date = start.strftime("%Y-%m-%d 09:15")
+    return (
+        start.strftime("%Y-%m-%d 09:15"),
+        today.strftime("%Y-%m-%d 15:30"),
+    )
 
-    to_date = today.strftime("%Y-%m-%d 15:30")
+# ----------------------------------------------------
+# Retry Wrapper
+# ----------------------------------------------------
 
-    return from_date, to_date
+async def fetch_history(
+    exchange: str,
+    token: str,
+):
 
+    client = get_client()
+
+    from_date, to_date = get_date_range()
+
+    for attempt in range(MAX_RETRIES):
+
+        try:
+
+            candles = await client.get_historical_data(
+
+                exchange=exchange,
+
+                symboltoken=token,
+
+                interval=INTERVAL,
+
+                from_date=from_date,
+
+                to_date=to_date,
+
+            )
+
+            if candles:
+
+                return candles
+
+        except Exception as e:
+
+            logger.warning(
+                "[History] Retry %d : %s",
+                attempt + 1,
+                e,
+            )
+
+        await asyncio.sleep(RETRY_DELAY)
+
+    return None
 
 # ----------------------------------------------------
 # Download one contract
