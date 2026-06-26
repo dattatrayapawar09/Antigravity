@@ -308,43 +308,6 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 ),
             )
         )
-
-       
-    all_options.append(
-        OptionContract(
-            id=contract_id,
-            symbol=contract["underlying"],
-            strike=float(contract["strike"]),
-            type=contract["type"],
-            expiry=contract["expiry"],
-    
-            spot=float(contract["spotPrice"]),
-    
-            price=price,
-            prevPrice=prevPrice,
-    
-            volume=volume,
-            avgVol=avgVol,
-    
-            historicalVolumes=historicalVolumes,
-            previousSessionVolume=previousSessionVolume,
-    
-            oi=oi,
-            prevOi=previousSessionOi,
-            previousSessionOi=previousSessionOi,
-    
-            iv=iv,
-    
-            bid=float(q.get("bestBidPrice", 0) or 0),
-            ask=float(q.get("bestAskPrice", 0) or 0),
-    
-            spread=max(
-                0,
-                float(q.get("bestAskPrice", 0) or 0)
-                - float(q.get("bestBidPrice", 0) or 0)
-            ),
-        )
-    )
     
     logger.info(
         "[Options] Returning %d contracts",
