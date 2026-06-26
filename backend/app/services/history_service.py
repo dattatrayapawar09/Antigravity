@@ -153,7 +153,7 @@ def save_history(contract_id: str, candles: list):
 # Keep only latest 5 rows
 # ----------------------------------------------------
 
-def cleanup_history(contract_id: str):
+
 
     try:
 
