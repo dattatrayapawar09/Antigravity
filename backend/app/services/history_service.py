@@ -148,7 +148,7 @@ async def download_contract_history(contract: dict):
             return
 
         save_history(contract_id, candles)
-            if not candles:
+        if not candles:
         return
 
     # Keep only latest 5 sessions
