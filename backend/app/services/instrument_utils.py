@@ -579,7 +579,30 @@ def get_scanner_contracts() -> list[dict]:
     )
 
     return contracts
+def get_nearest_strikes(
+    strikes: list[float],
+    spot_price: float,
+    strike_range: int = STRIKE_RANGE,
+) -> list[float]:
+    """
+    Return ATM ± strike_range strikes.
+    """
 
+    if not strikes:
+        return []
+
+    atm = min(
+        strikes,
+        key=lambda s: abs(s - spot_price)
+    )
+
+    atm_index = strikes.index(atm)
+
+    start = max(0, atm_index - strike_range)
+
+    end = min(len(strikes), atm_index + strike_range + 1)
+
+    return strikes[start:end]
 def get_scanner_contracts() -> list[dict]:
     """
     Return only the contracts required by the scanner.
