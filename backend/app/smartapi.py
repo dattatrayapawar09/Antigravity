@@ -213,7 +213,92 @@ class SmartAPIClient:
         except Exception as exc:
             logger.error("[SmartAPI] OptionChain error: %s", exc)
             return None
+    async def get_historical_data(
+        self,
+        exchange: str,
+        symboltoken: str,
+        interval: str,
+        from_date: str,
+        to_date: str,
+    ) -> Optional[list[dict[str, Any]]]:
+        """
+        Fetch historical candle data.
 
+        Returns list like:
+
+        [
+            {
+                "datetime": "...",
+                "open": ...,
+                "high": ...,
+                "low": ...,
+                "close": ...,
+                "volume": ...
+            }
+        ]
+        """
+
+        auth = await self.ensure_authenticated()
+        if not auth["success"]:
+            return None
+
+        try:
+            payload = {
+                "exchange": exchange,
+                "symboltoken": symboltoken,
+                "interval": interval,
+                "fromdate": from_date,
+                "todate": to_date,
+            }
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{_ANGEL_BASE}/rest/secure/angelbroking/historical/v1/getCandleData",
+                    json=payload,
+                    headers=self._base_headers(with_auth=True),
+                )
+
+                data = resp.json()
+
+            if not data.get("status"):
+                logger.warning(
+                    "[Historical] %s",
+                    data.get("message")
+                )
+                return None
+
+            candles = data.get("data", [])
+
+            result = []
+
+            for row in candles:
+
+                result.append(
+                    {
+                        "datetime": row[0],
+                        "open": float(row[1]),
+                        "high": float(row[2]),
+                        "low": float(row[3]),
+                        "close": float(row[4]),
+                        "volume": int(row[5]),
+                    }
+                )
+
+            logger.info(
+                "[Historical] %s candles fetched",
+                len(result)
+            )
+
+            return result
+
+        except Exception as e:
+
+            logger.exception(
+                "[Historical] Error : %s",
+                e
+            )
+
+            return None
 
 # ── Module-level singleton (created during lifespan) ───────────────────────────
 _client: Optional[SmartAPIClient] = None
