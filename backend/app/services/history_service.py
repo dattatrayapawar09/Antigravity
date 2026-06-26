@@ -167,7 +167,7 @@ async def update_all_option_history():
         "[History] Starting historical download..."
     )
 
-    contracts = IU.get_all_option_contracts()
+    contracts = await build_scanner_contracts()
 
     if not contracts:
         logger.warning(
@@ -230,3 +230,47 @@ async def run_daily_history_update():
             "[History] Daily update failed : %s",
             e
         )
+async def build_scanner_contracts():
+
+    client = get_client()
+
+    contracts = []
+
+    symbols = INDEX_SYMBOLS + TOP_50_STOCKS
+
+    for symbol in symbols:
+
+        cash = IU.get_cash_token(symbol)
+
+        if not cash:
+            continue
+
+        ltp = await client.get_ltp_data(
+            cash["exchange"],
+            cash["tradingsymbol"],
+            cash["symboltoken"],
+        )
+
+        if not ltp:
+            continue
+
+        spot = float(ltp["ltp"])
+
+        mapping = IU.generate_option_chain_mapping(
+            underlying=symbol,
+            expiry=None,
+            spot_price=spot,
+            num_strikes=STRIKE_RANGE,
+        )
+
+        if "error" in mapping:
+            continue
+
+        contracts.extend(mapping["chain"])
+
+    logger.info(
+        "[History] Scanner Contracts : %d",
+        len(contracts),
+    )
+
+    return contracts
