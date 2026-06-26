@@ -257,12 +257,22 @@ async def build_scanner_contracts():
 
         if not cash:
             continue
-
-        ltp = await client.get_ltp_data(
-            cash["exchange"],
-            cash["tradingsymbol"],
-            cash["symboltoken"],
-        )
+    cash_instruments = []
+    
+    for symbol in symbols:
+    
+        cash = IU.get_cash_token(symbol)
+    
+        if cash:
+            cash_instruments.append({
+                "exchange": cash["exchange"],
+                "symboltoken": cash["symboltoken"],
+            })
+            ltp = await client.get_ltp_data(
+                cash["exchange"],
+                cash["tradingsymbol"],
+                cash["symboltoken"],
+            )
 
         if not ltp:
             continue
