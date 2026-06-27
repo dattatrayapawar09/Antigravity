@@ -84,26 +84,34 @@ async def _history_refresh_loop():
 
             now = datetime.now(IST)
 
+            #
+            # Run once every trading day
+            #
+
             if (
-                now.hour == 15
+                now.weekday() < 5
+                and now.hour == 15
                 and now.minute >= 45
                 and last_run != now.date()
             ):
 
-                logger.info("[Scheduler] Starting daily history update")
+                logger.info(
+                    "[Scheduler] Starting Daily History Download"
+                )
 
                 await run_daily_history_update()
-                
+
                 last_run = now.date()
-                
-                logger.info("[Scheduler] Daily history completed")
+
+                logger.info(
+                    "[Scheduler] History Download Completed"
+                )
 
         except Exception as exc:
 
             logger.exception(exc)
 
         await asyncio.sleep(60)
-
 
 def start_background_tasks():
 
