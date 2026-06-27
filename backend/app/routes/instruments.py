@@ -286,6 +286,19 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         )
         
         oiChange = oi - previousSessionOi
+        priceMomentum = (
+            ((price - prev_price) / prev_price) * 100
+            if prev_price > 0
+            else 0
+        )
+        
+        smartScore = round(
+            (volumeRatio * 40)
+            + ((oiChange / max(oi, 1)) * 30)
+            + (priceMomentum * 15)
+            + (iv * 10),
+            2,
+        )
         previousSessionVolume = (
             historicalVolumes[-1]
             if historicalVolumes
