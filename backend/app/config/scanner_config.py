@@ -59,7 +59,7 @@ TOP_50_STOCKS = [
     "TECHM",
     "INDUSINDBK",
     "BAJAJFINSV",
-    "BAJAJFINANCE",
+    "PFC",
     "GRASIM",
     "EICHERMOT",
     "HEROMOTOCO",
