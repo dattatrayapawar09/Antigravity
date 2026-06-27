@@ -321,6 +321,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             OptionContract(
                 id=contract_id,
                 symbol=contract["underlying"],
+                category=contract.get("category", "Stock"),
                 strike=float(contract["strike"]),
                 type=contract["type"],
                 expiry=contract["expiry"],
