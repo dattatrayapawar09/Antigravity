@@ -1,13 +1,22 @@
-export default function Dashboard() {
-  return (
-    <div className="p-6 text-white">
-      <h1 className="text-3xl font-bold">
-        📊 Dashboard
-      </h1>
+import MarketCards from "../components/MarketCards";
+import ScannerTable from "../components/ScannerTable";
 
-      <p className="mt-4 text-slate-400">
-        Options Pulse Tracker Dashboard
-      </p>
+import { useScanner } from "../context/ScannerContext";
+
+export default function Dashboard() {
+
+  const { options } = useScanner();
+
+  return (
+
+    <div className="space-y-6">
+
+      <MarketCards />
+
+      <ScannerTable data={options} />
+
     </div>
+
   );
+
 }
