@@ -14,12 +14,6 @@ from app.models import AvgVolResponse, OptionContract, OptionsRequest, OptionsRe
 from app.services import instrument_utils as IU
 from app.smartapi import get_client
 from app.database import history_db
-from enum import Enum
-
-class ScannerMode(str, Enum):
-    INDEX = "index"
-    STOCKS = "stocks"
-    ALL = "all"
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/instruments", tags=["instruments"])
