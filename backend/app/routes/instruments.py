@@ -164,7 +164,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             logger.warning("[Options] %s: spot=0, skipping option chain", sym)
             continue
 
-        mapping = IU.generate_option_chain_mapping(sym, expiry, spot, 5)
+        mapping = IU.generate_option_chain_mapping(sym, expiry, spot, 10)
         if "error" in mapping:
             logger.warning("[Options] mapping error for %s: %s", sym, mapping["error"])
             continue
