@@ -404,9 +404,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         reverse=True,
     
     )
-    
-    )
-    
+     
     #
     # Return Top 50 Stocks
     #
