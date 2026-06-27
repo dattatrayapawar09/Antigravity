@@ -62,7 +62,8 @@ class OptionContract(BaseModel):
 
     historicalVolumes: list[int] = Field(default_factory=list)
     previousSessionVolume: int = 0
-
+    volumeRatio: float = 0.0
+    oiChange: int = 0
     oi: int
     prevOi: int
     previousSessionOi: int = 0
