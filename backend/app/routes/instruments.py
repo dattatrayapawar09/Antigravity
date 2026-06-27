@@ -416,8 +416,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     top_stock_options = top_stock_options[:50]
     for idx, option in enumerate(top_stock_options, start=1):
         option.rank = idx  
-    return OptionsResponse(
-        options=top_stock_options,
+   
         # ----------------------------------------------------
         # Scanner Mode Selection
         # ----------------------------------------------------
