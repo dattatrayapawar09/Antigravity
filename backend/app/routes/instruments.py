@@ -357,7 +357,21 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     sorted_expiries = IU.sort_expiries(
         list(available_expiries_set)
     )
-
+    # ---------------------------------------
+    # Sort by Volume Ratio
+    # ---------------------------------------
+    
+    all_options.sort(
+    
+        key=lambda x: x.volumeRatio,
+    
+        reverse=True,
+    
+    )
+    
+    # Return only Top 50
+    
+    all_options = all_options[:50]
     return OptionsResponse(
         options=all_options,
         expiries=sorted_expiries,
