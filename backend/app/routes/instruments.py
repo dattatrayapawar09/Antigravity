@@ -416,12 +416,11 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     top_stock_options = top_stock_options[:50]
     for idx, option in enumerate(top_stock_options, start=1):
         option.rank = idx  
-   
         # ----------------------------------------------------
         # Scanner Mode Selection
         # ----------------------------------------------------
         
-        if body.mode == "index":
+        if body.mode.value == "index":
         
             final_options = [
                 o
@@ -430,17 +429,17 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             ]
         
             final_options.sort(
-                key=lambda x: x.volumeRatio,
+                key=lambda x: x.smartScore,
                 reverse=True,
             )
         
             final_options = final_options[:50]
         
-        elif body.mode == "all":
+        elif body.mode.value == "all":
         
             final_options = sorted(
                 all_options,
-                key=lambda x: x.volumeRatio,
+                key=lambda x: x.smartScore,
                 reverse=True,
             )[:50]
         
@@ -450,7 +449,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         
         
         # ----------------------------------------------------
-        # Rank
+        # Ranking
         # ----------------------------------------------------
         
         for idx, option in enumerate(final_options, start=1):
@@ -466,7 +465,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         
             mode="LIVE",
         
-        )
+        )   
 
 # ── POST /api/instruments/avgvol ───────────────────────────────────────────────
 
