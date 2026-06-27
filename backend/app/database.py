@@ -41,20 +41,24 @@ class HistoryDB:
             CREATE TABLE IF NOT EXISTS option_history(
 
                 contract_id TEXT,
-
+            
                 trading_date TEXT,
-
-                volume INTEGER,
-
-                oi INTEGER,
-
+            
+                open REAL,
+            
+                high REAL,
+            
+                low REAL,
+            
                 close REAL,
-
-                PRIMARY KEY(
-                    contract_id,
-                    trading_date
-                )
-
+            
+                volume INTEGER,
+            
+                oi INTEGER,
+            
+                PRIMARY KEY(contract_id,trading_date)
+            
+            )
             )
             """
         )
