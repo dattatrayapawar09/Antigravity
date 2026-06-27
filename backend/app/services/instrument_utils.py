@@ -575,8 +575,11 @@ def get_scanner_contracts() -> list[dict]:
         if not strikes:
             continue
 
-        # Middle strike (temporary ATM)
-        atm_index = len(strikes) // 2
+        selected = get_nearest_strikes(
+            strikes,
+            spot_price,
+            STRIKE_RANGE,
+        )
 
         start = max(0, atm_index - STRIKE_RANGE)
 
