@@ -552,7 +552,10 @@ def get_scanner_contracts() -> list[dict]:
             continue
 
         # nearest expiry
-        expiry = expiries[0]
+        if is_index(symbol):
+            expiry = get_current_weekly_expiry(expiries)
+        else:
+            expiry = get_current_monthly_expiry(expiries)
 
         oc = (
             C.options_cache.get(resolve_symbol(symbol))
