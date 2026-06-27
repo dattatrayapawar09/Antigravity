@@ -13,21 +13,18 @@ function App() {
   return (
     <MainLayout>
       <Routes>
-        {/* Dashboard */}
         <Route path="/" element={<Dashboard />} />
 
-        {/* Scanner Pages */}
         <Route path="/index" element={<IndexOptions />} />
+
         <Route path="/stocks" element={<StockOptions />} />
+
         <Route path="/scanner" element={<AllScanner />} />
 
-        {/* Watchlist */}
         <Route path="/watchlist" element={<Watchlist />} />
 
-        {/* Settings */}
         <Route path="/settings" element={<Settings />} />
 
-        {/* Redirect Unknown URLs */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </MainLayout>
