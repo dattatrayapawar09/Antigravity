@@ -212,7 +212,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             json.dumps(q, indent=2, default=str)
         )
         contract = token_to_contract_map.get(key)
-        logger.info(q)
+       
         if not contract:
             continue
 
