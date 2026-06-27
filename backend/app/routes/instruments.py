@@ -325,11 +325,13 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         
                 volume=volume,
                 avgVol=avgVol,
-        
+                volumeRatio=volumeRatio,
+
                 historicalVolumes=historicalVolumes,
                 previousSessionVolume=previousSessionVolume,
         
                 oi=oi,
+                oiChange=oiChange,
                 prevOi=previousSessionOi,
                 previousSessionOi=previousSessionOi,
         
