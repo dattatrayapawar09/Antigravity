@@ -21,7 +21,8 @@ class ScannerMode(str, Enum):
     INDEX = "index"
     STOCKS = "stocks"
     ALL = "all"
-
+    
+category: ContractCategory = ContractCategory.STOCK
 
 class OptionsRequest(BaseModel):
     symbols: list[str]
