@@ -255,11 +255,10 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             for h in history
         ]
         
-        avgVol = (
-            int(sum(historicalVolumes) / len(historicalVolumes))
-            if historicalVolumes
-            else max(1, int(volume * 0.75))
-        )
+        avgVol = history_db.get_average_volume(contract_id)
+
+        if avgVol <= 0:
+            avgVol = max(volume, 1)
         # ---------------------------------------
         # Calculate Volume Ratio
         # ---------------------------------------
