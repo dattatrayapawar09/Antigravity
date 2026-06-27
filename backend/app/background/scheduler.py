@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from app.auth import auto_login
 from app.services.instrument_utils import fetch_and_cache_scrip_master
-from app.services.history_service import update_history
+from app.services.history_service import run_daily_history_update
 
 logger = logging.getLogger(__name__)
 
@@ -90,13 +90,13 @@ async def _history_refresh_loop():
                 and last_run != now.date()
             ):
 
-                logger.info("[Scheduler] Updating option history")
+                logger.info("[Scheduler] Starting daily history update")
 
-                await update_history()
-
+                await run_daily_history_update()
+                
                 last_run = now.date()
-
-                logger.info("[Scheduler] History updated")
+                
+                logger.info("[Scheduler] Daily history completed")
 
         except Exception as exc:
 
