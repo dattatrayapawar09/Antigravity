@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import StatusBar from "../components/StatusBar";
 import {
   FiHome,
   FiTrendingUp,
