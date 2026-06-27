@@ -171,12 +171,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
 
         for e in mapping.get("allExpiries", []):
             available_expiries_set.add(e)
-        import json
         
-        logger.info(
-            "[OPTION QUOTE] %s",
-            json.dumps(q, indent=2, default=str)
-        )
         logger.info(
             "[Options] %s | spot=%.2f | ATM=%.2f | expiry=%s | contracts=%d",
             sym, spot, mapping["atmStrike"], mapping["expiry"], len(mapping["chain"]),
