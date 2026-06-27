@@ -151,32 +151,22 @@ class HistoryDB:
     ) -> List[Dict]:
 
         cur = self.conn.execute(
-
             """
             SELECT
-
                 trading_date,
-
+                open,
+                high,
+                low,
+                close,
                 volume,
-
-                oi,
-
-                close
-
+                oi
             FROM option_history
-
             WHERE contract_id=?
-
             ORDER BY trading_date ASC
-
             LIMIT 5
-
             """,
-
-            (contract_id,)
-
+            (contract_id,),
         )
-
         return [
             dict(r)
             for r in cur.fetchall()
