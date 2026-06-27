@@ -425,6 +425,7 @@ def generate_option_chain_mapping(
             if c is None:
                 continue
             chain.append({
+                "category": "Index" if is_index(underlying) else "Stock",
                 "symbol":     c["symbol"],
                 "token":      c["token"],
                 "underlying": underlying,
