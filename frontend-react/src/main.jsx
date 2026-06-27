@@ -8,8 +8,12 @@ import "./styles/globals.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
+import { ScannerProvider } from "./context/ScannerContext";
+
+<ScannerProvider>
     <BrowserRouter>
-      <App />
+        <App />
     </BrowserRouter>
+</ScannerProvider>
   </React.StrictMode>
 );
