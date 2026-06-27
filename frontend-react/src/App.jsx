@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import MainLayout from "./layouts/MainLayout";
@@ -34,6 +35,8 @@ function App() {
 
 export default App;
 =======
+=======
+>>>>>>> dce65a4 (Complete React frontend)
 import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
@@ -156,4 +159,3 @@ function App() {
 }
 
 export default App
->>>>>>> 505f3e9 (new)
