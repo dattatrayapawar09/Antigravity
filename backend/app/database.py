@@ -193,10 +193,52 @@ class HistoryDB:
             ) / len(rows)
 
         )
-
+    def get_previous_close(self, contract_id):
+    
+        rows = self.get_last_5_days(contract_id)
+    
+        if not rows:
+            return 0
+    
+        return rows[-1]["close"]
+    
+    
+    def get_previous_volume(self, contract_id):
+    
+        rows = self.get_last_5_days(contract_id)
+    
+        if not rows:
+            return 0
+    
+        return rows[-1]["volume"]
+    
+    
+    def get_previous_oi(self, contract_id):
+    
+        rows = self.get_last_5_days(contract_id)
+    
+        if not rows:
+            return 0
+    
+        return rows[-1]["oi"]
     def close(self):
 
         self.conn.close()
 
-
+    def already_updated(self, contract_id, trade_date):
+    
+        cur = self.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM option_history
+            WHERE contract_id=?
+            AND trading_date=?
+            """,
+            (
+                contract_id,
+                trade_date,
+            ),
+        )
+    
+        return cur.fetchone()[0] > 0
 history_db = HistoryDB()
