@@ -15,11 +15,19 @@ class SymbolsRequest(BaseModel):
     symbols: list[str] = Field(default_factory=list)
 
 
+from enum import Enum
+
+class ScannerMode(str, Enum):
+    INDEX = "index"
+    STOCKS = "stocks"
+    ALL = "all"
+
+
 class OptionsRequest(BaseModel):
     symbols: list[str]
     expiry: str | None = None
-    mode: str = "stocks"      # index | stocks | all
-
+    mode: ScannerMode = ScannerMode.STOCKS
+    
 # ── Response models ────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):
