@@ -418,12 +418,60 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     #
     
     top_stock_options = top_stock_options[:50]
-      
+    for idx, option in enumerate(top_stock_options, start=1):
+        option.rank = idx  
     return OptionsResponse(
         options=top_stock_options,
-        expiries=sorted_expiries,
-        mode="LIVE",
-    )
+        # ----------------------------------------------------
+        # Scanner Mode Selection
+        # ----------------------------------------------------
+        
+        if body.mode == "index":
+        
+            final_options = [
+                o
+                for o in all_options
+                if o.category == "Index"
+            ]
+        
+            final_options.sort(
+                key=lambda x: x.volumeRatio,
+                reverse=True,
+            )
+        
+            final_options = final_options[:50]
+        
+        elif body.mode == "all":
+        
+            final_options = sorted(
+                all_options,
+                key=lambda x: x.volumeRatio,
+                reverse=True,
+            )[:50]
+        
+        else:
+        
+            final_options = top_stock_options
+        
+        
+        # ----------------------------------------------------
+        # Rank
+        # ----------------------------------------------------
+        
+        for idx, option in enumerate(final_options, start=1):
+        
+            option.rank = idx
+        
+        
+        return OptionsResponse(
+        
+            options=final_options,
+        
+            expiries=sorted_expiries,
+        
+            mode="LIVE",
+        
+        )
 
 # ── POST /api/instruments/avgvol ───────────────────────────────────────────────
 
