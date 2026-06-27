@@ -1,10 +1,18 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+import App from "./App";
+import { ScannerProvider } from "./context/ScannerContext";
+
+import "./styles/globals.css";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <ScannerProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </ScannerProvider>
+  </React.StrictMode>
+);
