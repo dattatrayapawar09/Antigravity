@@ -1,5 +1,4 @@
 import { NavLink } from "react-router-dom";
-import StatusBar from "../components/StatusBar";
 import {
   FiHome,
   FiTrendingUp,
@@ -8,34 +7,36 @@ import {
   FiSettings,
 } from "react-icons/fi";
 
+import StatusBar from "../components/StatusBar";
+
 const menuItems = [
   {
-    name: "Dashboard",
+    title: "Dashboard",
     path: "/",
     icon: <FiHome size={18} />,
   },
   {
-    name: "Index Options",
+    title: "Index Options",
     path: "/index",
     icon: <FiTrendingUp size={18} />,
   },
   {
-    name: "Stock Options",
+    title: "Stock Options",
     path: "/stocks",
     icon: <FiGrid size={18} />,
   },
   {
-    name: "All Scanner",
+    title: "All Scanner",
     path: "/scanner",
     icon: <FiTrendingUp size={18} />,
   },
   {
-    name: "Watchlist",
+    title: "Watchlist",
     path: "/watchlist",
     icon: <FiStar size={18} />,
   },
   {
-    name: "Settings",
+    title: "Settings",
     path: "/settings",
     icon: <FiSettings size={18} />,
   },
@@ -47,28 +48,28 @@ export default function MainLayout({ children }) {
 
       {/* Header */}
 
-      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-900">
+      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-900 shadow-lg">
 
-        <div className="mx-auto flex h-16 max-w-screen-2xl items-center justify-between px-6">
+        <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-6 py-4">
 
           <div>
 
-            <h1 className="text-2xl font-bold text-cyan-400">
+            <h1 className="text-3xl font-bold text-cyan-400">
               Options Pulse Tracker
             </h1>
 
-            <p className="text-xs text-slate-400">
-              Live Options Analytics Dashboard
+            <p className="text-sm text-slate-400">
+              Professional Options Analytics Platform
             </p>
 
           </div>
 
           <div className="flex items-center gap-3">
 
-            <span className="h-3 w-3 rounded-full bg-green-500"></span>
+            <span className="h-3 w-3 animate-pulse rounded-full bg-green-500"></span>
 
-            <span className="text-sm text-green-400">
-              LIVE
+            <span className="font-semibold text-green-400">
+              LIVE MARKET
             </span>
 
           </div>
@@ -89,17 +90,16 @@ export default function MainLayout({ children }) {
               key={item.path}
               to={item.path}
               className={({ isActive }) =>
-                `flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition
-                ${
+                `flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 ${
                   isActive
-                    ? "bg-cyan-600 text-white"
-                    : "text-slate-300 hover:bg-slate-800"
+                    ? "bg-cyan-600 text-white shadow"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
                 }`
               }
             >
               {item.icon}
 
-              {item.name}
+              {item.title}
 
             </NavLink>
 
@@ -117,24 +117,11 @@ export default function MainLayout({ children }) {
 
       </main>
 
-      {/* Footer */}
+      {/* Status */}
 
-      <footer className="border-t border-slate-800 bg-slate-900">
+      <footer className="mx-auto max-w-screen-2xl px-6 pb-6">
 
-        <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-6 py-3 text-sm text-slate-400">
-
-          <span>
-            Options Pulse Tracker v2.0
-          </span>
-
-          <span>
-            Backend Status :
-            <span className="ml-2 text-green-400">
-              Connected
-            </span>
-          </span>
-
-        </div>
+        <StatusBar />
 
       </footer>
 
