@@ -398,14 +398,12 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     #
     
     top_stock_options.sort(
-    
-        key=lambda x: (
-            x.volumeRatio,
-            x.volume,
-            x.oi,
-        ),
+
+        key=lambda x: x.smartScore,
     
         reverse=True,
+    
+    )
     
     )
     
