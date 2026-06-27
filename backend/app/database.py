@@ -241,10 +241,26 @@ class HistoryDB:
     
         )
 
+    def get_average_close(
+        self,
+        contract_id: str,
+    ) -> float:
+    
+        rows = self.get_last_5_days(contract_id)
+    
+        if not rows:
+            return 0.0
+    
+        return round(
+            sum(r["close"] for r in rows) / len(rows),
+            2,
+        )
+    from typing import Optional
+
     def get_last_record(
         self,
         contract_id: str,
-    ):
+    ) -> Optional[Dict]:
     
         rows = self.get_last_5_days(contract_id)
     
