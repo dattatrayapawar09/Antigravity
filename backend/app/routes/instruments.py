@@ -357,23 +357,62 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     sorted_expiries = IU.sort_expiries(
         list(available_expiries_set)
     )
-    # ---------------------------------------
-    # Sort by Volume Ratio
-    # ---------------------------------------
+    # ----------------------------------------------------
+    # Pick BEST option for every stock
+    # ----------------------------------------------------
     
-    all_options.sort(
+    best_option_per_stock = {}
     
-        key=lambda x: x.volumeRatio,
+    for option in all_options:
+    
+        existing = best_option_per_stock.get(option.symbol)
+    
+        if existing is None:
+    
+            best_option_per_stock[option.symbol] = option
+    
+            continue
+    
+        #
+        # Higher Volume Ratio wins
+        #
+    
+        if option.volumeRatio > existing.volumeRatio:
+    
+            best_option_per_stock[option.symbol] = option
+    
+    #
+    # Convert dictionary back to list
+    #
+    
+    top_stock_options = list(
+        best_option_per_stock.values()
+    )
+    
+    #
+    # Rank stocks by Volume Ratio
+    #
+    
+    top_stock_options.sort(
+    
+        key=lambda x: (
+            x.volumeRatio,
+            x.volume,
+            x.oi,
+        ),
     
         reverse=True,
     
     )
     
-    # Return only Top 50
+    #
+    # Return Top 50 Stocks
+    #
     
-    all_options = all_options[:50]
+    top_stock_options = top_stock_options[:50]
+      
     return OptionsResponse(
-        options=all_options,
+        options=top_stock_options,
         expiries=sorted_expiries,
         mode="LIVE",
     )
