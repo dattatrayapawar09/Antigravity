@@ -495,7 +495,16 @@ def get_contract_debug_info(
     upper_expiry = expiry.upper() if expiry else None
     target_expiry = (
         next((e for e in available_expiries if e.upper() == upper_expiry), None)
-        if upper_expiry else (available_expiries[0] if available_expiries else None)
+        if upper_expiry:
+            target_expiry = next(
+                (e for e in available_expiries if e.upper() == upper_expiry),
+                None,
+            )
+        else:
+            if is_index(underlying):
+                target_expiry = get_current_weekly_expiry(available_expiries)
+            else:
+                target_expiry = get_current_monthly_expiry(available_expiries)
     )
 
     contract = None
