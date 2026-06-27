@@ -265,7 +265,33 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             if historicalVolumes
             else max(1, int(volume * 0.75))
         )
+        # ---------------------------------------
+        # Calculate Volume Ratio
+        # ---------------------------------------
         
+        volumeRatio = round(
+        
+            volume / max(avgVol, 1),
+        
+            2,
+        
+        )
+        
+        # ---------------------------------------
+        # OI Change
+        # ---------------------------------------
+        
+        previousSessionOi = (
+        
+            history[-1]["oi"]
+        
+            if history
+        
+            else 0
+        
+        )
+        
+        oiChange = oi - previousSessionOi
         previousSessionVolume = (
             historicalVolumes[-1]
             if historicalVolumes
