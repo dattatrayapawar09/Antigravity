@@ -4,7 +4,29 @@ import { useScanner } from "../context/ScannerContext";
 export default function ScannerTable({ data = [] }) {
   const { watchlist, toggleWatchlist, loading } = useScanner();
 
+import Loading from "./Loading";
+import EmptyState from "./EmptyState";
   if (loading) {
+
+    return <Loading />;
+
+}
+
+if (!data.length) {
+
+    return (
+
+        <EmptyState
+
+            title="No Contracts"
+
+            message="No option contracts match your filters."
+
+        />
+
+    );
+
+}{
     return (
       <div className="flex justify-center py-10">
         <p className="text-slate-400">Loading scanner...</p>
