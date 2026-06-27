@@ -16,9 +16,9 @@ class SymbolsRequest(BaseModel):
 
 
 class OptionsRequest(BaseModel):
-    symbols: list[str] = Field(default_factory=list)
-    expiry: Optional[str] = None
-
+    symbols: list[str]
+    expiry: str | None = None
+    mode: str = "stocks"      # index | stocks | all
 
 # ── Response models ────────────────────────────────────────────────────────────
 
