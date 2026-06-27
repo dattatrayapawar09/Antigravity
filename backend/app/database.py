@@ -59,7 +59,6 @@ class HistoryDB:
                 PRIMARY KEY(contract_id,trading_date)
             
             )
-            )
             """
         )
 
@@ -105,6 +104,7 @@ class HistoryDB:
         self.conn.commit()
     
         self.cleanup(contract_id)
+        
     def cleanup(
         self,
         contract_id: str
@@ -193,6 +193,7 @@ class HistoryDB:
             ) / len(rows)
 
         )
+        
     def get_previous_close(self, contract_id):
     
         rows = self.get_last_5_days(contract_id)
@@ -221,11 +222,47 @@ class HistoryDB:
             return 0
     
         return rows[-1]["oi"]
+
+    def get_average_oi(
+        self,
+        contract_id: str,
+    ) -> int:
+    
+        rows = self.get_last_5_days(contract_id)
+    
+        if not rows:
+            return 0
+    
+        return int(
+    
+            sum(r["oi"] for r in rows)
+    
+            / len(rows)
+    
+        )
+
+    def get_last_record(
+        self,
+        contract_id: str,
+    ):
+    
+        rows = self.get_last_5_days(contract_id)
+    
+        if not rows:
+    
+            return None
+    
+        return rows[-1]
+        
     def close(self):
 
         self.conn.close()
 
-    def already_updated(self, contract_id, trade_date):
+    def already_updated(
+        self,
+        contract_id: str,
+        trade_date: str,
+    ) -> bool:
     
         cur = self.conn.execute(
             """
