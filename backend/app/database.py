@@ -74,52 +74,37 @@ class HistoryDB:
         self.conn.commit()
 
     def save_history(
-
         self,
-
         contract_id: str,
-
         trading_date: str,
-
+        open_price: float,
+        high: float,
+        low: float,
+        close: float,
         volume: int,
-
         oi: int,
-
-        close: float
-
     ):
-
+    
         self.conn.execute(
-
             """
             INSERT OR REPLACE INTO option_history
-
-            VALUES
-
-            (
-                ?,
-                ?,
-                ?,
-                ?,
-                ?
-            )
-
+            VALUES(?,?,?,?,?,?,?,?)
             """,
-
             (
                 contract_id,
                 trading_date,
+                open_price,
+                high,
+                low,
+                close,
                 volume,
                 oi,
-                close
-            )
-
+            ),
         )
-
+    
         self.conn.commit()
-
+    
         self.cleanup(contract_id)
-
     def cleanup(
         self,
         contract_id: str
