@@ -162,7 +162,26 @@ def get_available_expiries(underlying: str) -> list[str]:
     oc = C.options_cache.get(resolved) or C.options_cache.get(underlying, {})
     return sort_expiries([e for e in oc if is_expiry_future(e)])
 
+def is_index(symbol: str) -> bool:
+    return symbol.upper() in INDEX_SYMBOLS
 
+
+def get_current_weekly_expiry(expiries: list[str]) -> str | None:
+    if not expiries:
+        return None
+    return sort_expiries(expiries)[0]
+
+
+def get_current_monthly_expiry(expiries: list[str]) -> str | None:
+    if not expiries:
+        return None
+
+    expiries = sort_expiries(expiries)
+
+    if len(expiries) >= 4:
+        return expiries[3]
+
+    return expiries[-1]
 # ── Scrip Master loader ───────────────────────────────────────────────────────
 
 async def fetch_and_cache_scrip_master() -> None:
