@@ -1,65 +1,139 @@
-TOP_RESULTS = 50
+"""
+scanner_config.py
 
-STRIKE_RANGE = 10
+Central configuration for Options Pulse Tracker.
+Change scanner behaviour from here without touching business logic.
+"""
 
-MIN_VOLUME_RATIO = 1.5
+# ---------------------------------------------------
+# INDEX SYMBOLS
+# ---------------------------------------------------
 
 INDEX_SYMBOLS = [
+
     "NIFTY",
+
     "BANKNIFTY",
+
     "FINNIFTY",
-    "SENSEX"
+
+    "MIDCPNIFTY",
+
+    "SENSEX",
+
 ]
 
+# ---------------------------------------------------
+# TOP 50 F&O STOCKS
+# ---------------------------------------------------
+
 TOP_50_STOCKS = [
+
     "RELIANCE",
+    "TCS",
+    "INFY",
     "HDFCBANK",
     "ICICIBANK",
     "SBIN",
-    "INFY",
-    "TCS",
     "LT",
-    "BHARTIARTL",
+    "ITC",
     "AXISBANK",
-    "KOTAKBANK",
     "MARUTI",
-    "TITAN",
-    "ASIANPAINT",
-    "ULTRACEMCO",
-    "BAJFINANCE",
-    "BAJAJFINSV",
+    "BHARTIARTL",
+    "KOTAKBANK",
     "HCLTECH",
-    "TECHM",
-    "WIPRO",
+    "BAJFINANCE",
+    "ASIANPAINT",
     "SUNPHARMA",
-    "TATAMOTORS",
-    "M&M",
-    "ADANIENT",
-    "ADANIPORTS",
-    "NTPC",
+    "ULTRACEMCO",
+    "TITAN",
     "POWERGRID",
+    "NTPC",
     "ONGC",
-    "COALINDIA",
-    "BEL",
-    "HAL",
     "JSWSTEEL",
     "TATASTEEL",
+    "ADANIPORTS",
     "HINDALCO",
+    "COALINDIA",
+    "WIPRO",
+    "TECHM",
+    "INDUSINDBK",
+    "BAJAJFINSV",
+    "BAJAJFINANCE",
     "GRASIM",
-    "CIPLA",
-    "DRREDDY",
     "EICHERMOT",
     "HEROMOTOCO",
-    "BAJAJ_AUTO",
-    "INDUSINDBK",
-    "PNB",
-    "CANBK",
-    "IOC",
-    "BPCL",
-    "SHRIRAMFIN",
-    "TRENT",
-    "DLF",
-    "LODHA",
+    "M&M",
+    "CIPLA",
+    "DRREDDY",
+    "NESTLEIND",
+    "BRITANNIA",
+    "APOLLOHOSP",
     "DIVISLAB",
-    "PIDILITIND"
+    "SHRIRAMFIN",
+    "TATAMOTORS",
+    "BEL",
+    "TRENT",
+    "ADANIENT",
+    "HDFCLIFE",
+    "SBILIFE",
+    "PIDILITIND",
+    "DLF",
+
 ]
+
+# ---------------------------------------------------
+# SCANNER SETTINGS
+# ---------------------------------------------------
+
+STRIKE_RANGE = 10
+
+TOP_RESULTS = 50
+
+REFRESH_SECONDS = 10
+
+QUOTE_BATCH_SIZE = 50
+
+MAX_PARALLEL_REQUESTS = 8
+
+MAX_RETRIES = 3
+
+CURRENT_WEEKLY_ONLY = True
+
+CURRENT_MONTHLY_ONLY = True
+
+# ---------------------------------------------------
+# FILTERS
+# ---------------------------------------------------
+
+MIN_VOLUME_RATIO = 1.5
+
+MIN_OI_CHANGE = 0
+
+# ---------------------------------------------------
+# SMART SCORE
+# ---------------------------------------------------
+
+VOLUME_WEIGHT = 40
+
+OI_WEIGHT = 30
+
+PRICE_WEIGHT = 15
+
+IV_WEIGHT = 10
+
+SPREAD_WEIGHT = 5
+
+# ---------------------------------------------------
+# FEATURES
+# ---------------------------------------------------
+
+ENABLE_INDEX_TAB = True
+
+ENABLE_STOCK_TAB = True
+
+ENABLE_ALL_TAB = True
+
+ENABLE_WATCHLIST = True
+
+ENABLE_ALERTS = True
