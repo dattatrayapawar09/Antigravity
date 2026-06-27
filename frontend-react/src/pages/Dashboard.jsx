@@ -1,11 +1,21 @@
-import MarketCards from "../components/MarketCards";
-import ScannerTable from "../components/ScannerTable";
+import { useState } from "react";
 
 import { useScanner } from "../context/ScannerContext";
 
+import MarketCards from "../components/MarketCards";
+import Filters from "../components/Filters";
+import ScannerTable from "../components/ScannerTable";
+
 export default function Dashboard() {
 
-  const { options } = useScanner();
+  const {
+    options,
+    expiries,
+    refreshScanner,
+  } = useScanner();
+
+  const [filtered, setFiltered] =
+    useState(options);
 
   return (
 
@@ -13,7 +23,16 @@ export default function Dashboard() {
 
       <MarketCards />
 
-      <ScannerTable data={options} />
+      <Filters
+        options={options}
+        expiries={expiries}
+        onFilterChange={setFiltered}
+        onRefresh={refreshScanner}
+      />
+
+      <ScannerTable
+        data={filtered}
+      />
 
     </div>
 
