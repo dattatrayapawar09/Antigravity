@@ -530,7 +530,10 @@ def get_scanner_contracts() -> list[dict]:
         if not expiries:
             continue
 
-        expiry = expiries[0]
+        if is_index(symbol):
+            expiry = get_current_weekly_expiry(expiries)
+        else:
+            expiry = get_current_monthly_expiry(expiries)
 
         resolved = resolve_symbol(symbol)
 
