@@ -397,11 +397,13 @@ def generate_option_chain_mapping(
 
     # Pick nearest if not specified or specified one not available
     upper_expiry = expiry.upper() if expiry else None
-    target_expiry = (
-        upper_expiry
-        if upper_expiry and upper_expiry in available_expiries
-        else available_expiries[0]
-    )
+    if upper_expiry and upper_expiry in available_expiries:
+        target_expiry = upper_expiry
+    else:
+        if is_index(underlying):
+            target_expiry = get_current_weekly_expiry(available_expiries)
+        else:
+            target_expiry = get_current_monthly_expiry(available_expiries)
 
     strikes_obj = oc.get(target_expiry, {})
     all_strikes = sorted(strikes_obj.keys())
