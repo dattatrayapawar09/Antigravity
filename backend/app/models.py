@@ -46,36 +46,97 @@ class SpotPricesResponse(BaseModel):
     mode: str
 
 class OptionContract(BaseModel):
+
+    # ---------------------------------------
+    # Basic Contract Information
+    # ---------------------------------------
+
     id: str
+
     symbol: str
+
     strike: float
-    type: str
+
+    type: str          # CE / PE
+
     expiry: str
+
+    category: str = "Stock"   # Stock / Index
+
+    # ---------------------------------------
+    # Spot & Price
+    # ---------------------------------------
 
     spot: float
 
     price: float
-    prevPrice: float
+
+    prevPrice: float = 0
+
+    # ---------------------------------------
+    # Volume
+    # ---------------------------------------
 
     volume: int
+
     avgVol: int
 
-    historicalVolumes: list[int] = Field(default_factory=list)
+    volumeRatio: float = 0
+
+    historicalVolumes: list[int] = []
+
     previousSessionVolume: int = 0
-    volumeRatio: float = 0.0
-    oiChange: int = 0
+
+    # ---------------------------------------
+    # Open Interest
+    # ---------------------------------------
+
     oi: int
-    prevOi: int
+
+    prevOi: int = 0
+
     previousSessionOi: int = 0
 
-    iv: float
+    oiChange: int = 0
+
+    oiChangePercent: float = 0
+
+    # ---------------------------------------
+    # Implied Volatility
+    # ---------------------------------------
+
+    iv: float = 0
+
+    ivChange: float = 0
+
+    # ---------------------------------------
+    # Bid Ask
+    # ---------------------------------------
 
     bid: float = 0
+
     ask: float = 0
+
     spread: float = 0
 
-    lastUpdated: Optional[str] = None
+    # ---------------------------------------
+    # Scanner
+    # ---------------------------------------
 
+    smartScore: float = 0
+
+    signal: str = "Neutral"
+
+    rank: int = 0
+
+    # ---------------------------------------
+    # UI
+    # ---------------------------------------
+
+    starred: bool = False
+
+    alert: bool = False
+    
 class OptionsResponse(BaseModel):
     options: list[OptionContract]
     expiries: list[str]
