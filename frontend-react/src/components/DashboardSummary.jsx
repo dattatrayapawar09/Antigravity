@@ -1,9 +1,13 @@
 import {
-    FiTrendingUp,
-    FiTrendingDown,
-    FiBarChart2,
-    FiActivity,
+  FiTrendingUp,
+  FiTrendingDown,
+  FiBarChart2,
+  FiActivity,
+  FiDatabase,
+  FiMinus,
 } from "react-icons/fi";
+
+import { useMemo } from "react";
 
 import { useScanner } from "../context/ScannerContext";
 
@@ -11,92 +15,121 @@ import StatCard from "./StatCard";
 
 export default function DashboardSummary() {
 
-    const { options } = useScanner();
+  const {
+    options,
+    backendConnected,
+  } = useScanner();
 
-    const bullish =
-        options.filter(
-            x => x.signal?.includes("Bull")
-        ).length;
+  const stats = useMemo(() => {
 
-    const bearish =
-        options.filter(
-            x => x.signal?.includes("Bear")
-        ).length;
+    const total = options.length;
 
-    const avgRatio =
-        options.length
-            ? (
-                  options.reduce(
-                      (s, x) =>
-                          s + x.volumeRatio,
-                      0
-                  ) / options.length
-              ).toFixed(2)
-            : 0;
+    const bullish = options.filter(
+      x => x.signal?.toLowerCase().includes("bull")
+    ).length;
 
-    const maxScore =
-        options.length
-            ? Math.max(
-                  ...options.map(
-                      x => x.smartScore
-                  )
-              )
-            : 0;
+    const bearish = options.filter(
+      x => x.signal?.toLowerCase().includes("bear")
+    ).length;
 
-    return (
+    const neutral = total - bullish - bearish;
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+    const avgVolumeRatio =
+      total > 0
+        ? (
+            options.reduce(
+              (sum, x) => sum + (x.volumeRatio || 0),
+              0
+            ) / total
+          ).toFixed(2)
+        : "0.00";
 
-            <StatCard
+    const avgSmartScore =
+      total > 0
+        ? (
+            options.reduce(
+              (sum, x) => sum + (x.smartScore || 0),
+              0
+            ) / total
+          ).toFixed(1)
+        : "0.0";
 
-                title="Bullish"
+    const highestSmartScore =
+      total > 0
+        ? Math.max(
+            ...options.map(
+              x => x.smartScore || 0
+            )
+          ).toFixed(1)
+        : "0.0";
 
-                value={bullish}
+    return {
+      total,
+      bullish,
+      bearish,
+      neutral,
+      avgVolumeRatio,
+      avgSmartScore,
+      highestSmartScore,
+    };
 
-                icon={<FiTrendingUp />}
+  }, [options]);
 
-                color="green"
+  return (
 
-            />
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
 
-            <StatCard
+      <StatCard
+        title="Contracts"
+        value={stats.total}
+        icon={<FiDatabase />}
+        color="blue"
+      />
 
-                title="Bearish"
+      <StatCard
+        title="Bullish"
+        value={stats.bullish}
+        icon={<FiTrendingUp />}
+        color="green"
+      />
 
-                value={bearish}
+      <StatCard
+        title="Bearish"
+        value={stats.bearish}
+        icon={<FiTrendingDown />}
+        color="red"
+      />
 
-                icon={<FiTrendingDown />}
+      <StatCard
+        title="Neutral"
+        value={stats.neutral}
+        icon={<FiMinus />}
+        color="gray"
+      />
 
-                color="red"
+      <StatCard
+        title="Avg Smart Score"
+        value={stats.avgSmartScore}
+        icon={<FiActivity />}
+        color="yellow"
+      />
 
-            />
+      <StatCard
+        title="Avg Vol Ratio"
+        value={`${stats.avgVolumeRatio}x`}
+        icon={<FiBarChart2 />}
+        color="cyan"
+      />
 
-            <StatCard
+      <StatCard
+        title="Backend"
+        value={backendConnected ? "Online" : "Offline"}
+        icon={<FiDatabase />}
+        color={backendConnected ? "green" : "red"}
+      />
 
-                title="Avg Volume Ratio"
+    </div>
 
-                value={`${avgRatio}x`}
-
-                icon={<FiBarChart2 />}
-
-                color="cyan"
-
-            />
-
-            <StatCard
-
-                title="Highest Smart Score"
-
-                value={maxScore.toFixed(1)}
-
-                icon={<FiActivity />}
-
-                color="yellow"
-
-            />
-
-        </div>
-
-    );
+  );
 
 }
