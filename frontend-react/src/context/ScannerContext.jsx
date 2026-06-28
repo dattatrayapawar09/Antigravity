@@ -1,215 +1,440 @@
 import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  useCallback,
+    createContext,
+    useContext,
+    useEffect,
+    useState,
+    useCallback,
 } from "react";
 
 import {
-  getSpotPrices,
-  getOptions,
+    getOptions,
+    getSpotPrices,
+    pingBackend,
 } from "../api/api";
+
+/*
+|--------------------------------------------------------------------------
+| Scanner Context
+|--------------------------------------------------------------------------
+*/
 
 const ScannerContext = createContext(null);
 
+/*
+|--------------------------------------------------------------------------
+| Provider
+|--------------------------------------------------------------------------
+*/
+
 export function ScannerProvider({ children }) {
-  /*
-  ---------------------------------------
-  UI State
-  ---------------------------------------
-  */
 
-  const [activeTab, setActiveTab] = useState("stocks");
+    /*
+    |--------------------------------------------------------------------------
+    | Scanner Mode
+    |--------------------------------------------------------------------------
+    */
 
-  const [loading, setLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState("all");
 
-  const [error, setError] = useState(null);
+    /*
+    |--------------------------------------------------------------------------
+    | Data
+    |--------------------------------------------------------------------------
+    */
 
-  /*
-  ---------------------------------------
-  Market Data
-  ---------------------------------------
-  */
+    const [options, setOptions] = useState([]);
 
-  const [spotPrices, setSpotPrices] = useState({});
+    const [expiries, setExpiries] = useState([]);
 
-  const [options, setOptions] = useState([]);
+    const [spotPrices, setSpotPrices] = useState({});
 
-  const [expiries, setExpiries] = useState([]);
+    /*
+    |--------------------------------------------------------------------------
+    | UI State
+    |--------------------------------------------------------------------------
+    */
 
-  const [marketMode, setMarketMode] = useState("LIVE");
+    const [loading, setLoading] = useState(false);
 
-  /*
-  ---------------------------------------
-  Watchlist
-  ---------------------------------------
-  */
+    const [backendConnected, setBackendConnected] = useState(false);
 
-  const [watchlist, setWatchlist] = useState(() => {
-    const saved = localStorage.getItem("watchlist");
+    const [lastRefresh, setLastRefresh] = useState(null);
 
-    return saved ? JSON.parse(saved) : [];
-  });
+    /*
+    |--------------------------------------------------------------------------
+    | Watchlist
+    |--------------------------------------------------------------------------
+    */
 
-  /*
-  ---------------------------------------
-  Settings
-  ---------------------------------------
-  */
+    const [watchlist, setWatchlist] = useState(() => {
 
-  const [refreshInterval, setRefreshInterval] = useState(10);
+        const saved = localStorage.getItem("watchlist");
 
-  const [theme, setTheme] = useState("dark");
+        if (!saved) return [];
 
-  /*
-  ---------------------------------------
-  Symbols
-  ---------------------------------------
-  */
+        try {
 
-  const defaultSymbols = [
-    "NIFTY",
-    "BANKNIFTY",
-    "SENSEX",
-  ];
+            return JSON.parse(saved);
 
-  /*
-  ---------------------------------------
-  Load Spot Prices
-  ---------------------------------------
-  */
+        } catch {
 
-  const refreshSpotPrices = useCallback(async () => {
-    try {
-      const data = await getSpotPrices(defaultSymbols);
+            return [];
 
-      setSpotPrices(data.spotPrices || {});
-    } catch (err) {
-      console.error(err);
-    }
-  }, []);
+        }
 
-  /*
-  ---------------------------------------
-  Load Scanner
-  ---------------------------------------
-  */
-
-  const refreshScanner = useCallback(async () => {
-    setLoading(true);
-
-    try {
-      const data = await getOptions(
-        defaultSymbols,
-        null,
-        activeTab
-      );
-
-      setOptions(data.options || []);
-
-      setExpiries(data.expiries || []);
-
-      setMarketMode(data.mode || "LIVE");
-
-      setError(null);
-    } catch (err) {
-      console.error(err);
-
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeTab]);
-
-  /*
-  ---------------------------------------
-  Auto Refresh
-  ---------------------------------------
-  */
-
-  useEffect(() => {
-    refreshSpotPrices();
-
-    refreshScanner();
-
-    const timer = setInterval(() => {
-      refreshSpotPrices();
-
-      refreshScanner();
-    }, refreshInterval * 1000);
-
-    return () => clearInterval(timer);
-  }, [
-    refreshSpotPrices,
-    refreshScanner,
-    refreshInterval,
-  ]);
-
-  /*
-  ---------------------------------------
-  Save Watchlist
-  ---------------------------------------
-  */
-
-  useEffect(() => {
-    localStorage.setItem(
-      "watchlist",
-      JSON.stringify(watchlist)
-    );
-  }, [watchlist]);
-
-  /*
-  ---------------------------------------
-  Toggle Watchlist
-  ---------------------------------------
-  */
-
-  const toggleWatchlist = (id) => {
-    setWatchlist((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((x) => x !== id);
-      }
-
-      return [...prev, id];
     });
-  };
 
-  return (
-    <ScannerContext.Provider
-      value={{
-        loading,
-        error,
+    /*
+    |--------------------------------------------------------------------------
+    | Filters
+    |--------------------------------------------------------------------------
+    */
+
+    const [filters, setFilters] = useState({
+
+        expiry: "",
+
+        type: "ALL",
+
+        search: "",
+
+        minRatio: 1,
+
+        signal: "ALL",
+
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Backend Health
+    |--------------------------------------------------------------------------
+    */
+
+    const checkBackend = useCallback(async () => {
+
+        try {
+
+            const result = await pingBackend();
+
+            setBackendConnected(
+                result?.status !== "offline"
+            );
+
+        } catch {
+
+            setBackendConnected(false);
+
+        }
+
+    }, []);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Load Scanner
+    |--------------------------------------------------------------------------
+    */
+
+    const refreshScanner = useCallback(async () => {
+
+        try {
+
+            setLoading(true);
+
+            const symbols =
+                activeTab === "index"
+                    ? [
+                          "NIFTY",
+                          "BANKNIFTY",
+                          "SENSEX",
+                      ]
+                    : [];
+
+            const result = await getOptions({
+
+                symbols,
+
+                expiry:
+                    filters.expiry || null,
+
+                mode: activeTab,
+
+            });
+
+            setOptions(result.options || []);
+
+            setExpiries(result.expiries || []);
+
+            setLastRefresh(
+                new Date()
+            );
+
+        } catch (err) {
+
+            console.error(err);
+
+        } finally {
+
+            setLoading(false);
+
+        }
+
+    }, [
 
         activeTab,
-        setActiveTab,
 
-        spotPrices,
+        filters.expiry,
+
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Spot Prices
+    |--------------------------------------------------------------------------
+    */
+
+    const refreshSpotPrices = useCallback(async () => {
+
+        try {
+
+            const symbols = [
+
+                "NIFTY",
+
+                "BANKNIFTY",
+
+                "SENSEX",
+
+            ];
+
+            const result =
+                await getSpotPrices(symbols);
+
+            setSpotPrices(
+                result.spotPrices || {}
+            );
+
+        } catch (err) {
+
+            console.error(err);
+
+        }
+
+    }, []);
+        /*
+    |--------------------------------------------------------------------------
+    | Toggle Watchlist
+    |--------------------------------------------------------------------------
+    */
+
+    const toggleWatchlist = useCallback((contractId) => {
+
+        setWatchlist((previous) => {
+
+            const updated = previous.includes(contractId)
+                ? previous.filter((id) => id !== contractId)
+                : [...previous, contractId];
+
+            localStorage.setItem(
+                "watchlist",
+                JSON.stringify(updated)
+            );
+
+            return updated;
+
+        });
+
+    }, []);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Refresh Everything
+    |--------------------------------------------------------------------------
+    */
+
+    const refreshAll = useCallback(async () => {
+
+        await checkBackend();
+
+        if (!backendConnected) return;
+
+        await Promise.all([
+            refreshScanner(),
+            refreshSpotPrices(),
+        ]);
+
+    }, [
+        backendConnected,
+        checkBackend,
+        refreshScanner,
+        refreshSpotPrices,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Initial Load
+    |--------------------------------------------------------------------------
+    */
+
+    useEffect(() => {
+
+        checkBackend();
+
+    }, [checkBackend]);
+
+    useEffect(() => {
+
+        if (backendConnected) {
+
+            refreshScanner();
+
+            refreshSpotPrices();
+
+        }
+
+    }, [
+        backendConnected,
+        refreshScanner,
+        refreshSpotPrices,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Auto Refresh
+    |--------------------------------------------------------------------------
+    */
+
+    useEffect(() => {
+
+        if (!backendConnected) return;
+
+        const timer = setInterval(() => {
+
+            refreshScanner();
+
+            refreshSpotPrices();
+
+        }, 10000);
+
+        return () => clearInterval(timer);
+
+    }, [
+        backendConnected,
+        refreshScanner,
+        refreshSpotPrices,
+    ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Context Value
+    |--------------------------------------------------------------------------
+    */
+
+    const value = {
+
+        /*
+        --------------------
+        Scanner
+        --------------------
+        */
 
         options,
 
         expiries,
 
-        marketMode,
+        activeTab,
+
+        setActiveTab,
+
+        refreshScanner,
+
+        /*
+        --------------------
+        Spot
+        --------------------
+        */
+
+        spotPrices,
+
+        refreshSpotPrices,
+
+        /*
+        --------------------
+        Backend
+        --------------------
+        */
+
+        backendConnected,
+
+        lastRefresh,
+
+        /*
+        --------------------
+        Loading
+        --------------------
+        */
+
+        loading,
+
+        /*
+        --------------------
+        Watchlist
+        --------------------
+        */
 
         watchlist,
 
         toggleWatchlist,
 
-        refreshInterval,
-        setRefreshInterval,
+        /*
+        --------------------
+        Filters
+        --------------------
+        */
 
-        theme,
-        setTheme,
+        filters,
 
-        refreshScanner,
-      }}
-    >
-      {children}
-    </ScannerContext.Provider>
-  );
+        setFilters,
+
+        /*
+        --------------------
+        Helpers
+        --------------------
+        */
+
+        refreshAll,
+
+    };
+
+    return (
+
+        <ScannerContext.Provider value={value}>
+
+            {children}
+
+        </ScannerContext.Provider>
+
+    );
+
 }
 
+/*
+|--------------------------------------------------------------------------
+| Hook
+|--------------------------------------------------------------------------
+*/
+
 export function useScanner() {
-  return useContext(ScannerContext);
+
+    const context = useContext(ScannerContext);
+
+    if (!context) {
+
+        throw new Error(
+            "useScanner must be used inside ScannerProvider"
+        );
+
+    }
+
+    return context;
+
 }
