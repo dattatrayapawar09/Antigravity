@@ -16,14 +16,14 @@ class SymbolsRequest(BaseModel):
 
 
 from enum import Enum
-
+class ContractCategory(str, Enum):
+    STOCK = "Stock"
+    INDEX = "Index"
 class ScannerMode(str, Enum):
     INDEX = "index"
     STOCKS = "stocks"
     ALL = "all"
     
-category: ContractCategory = ContractCategory.STOCK
-
 class OptionsRequest(BaseModel):
     symbols: list[str]
     expiry: str | None = None

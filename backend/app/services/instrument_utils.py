@@ -21,7 +21,7 @@ from typing import Any, Optional
 import httpx
 
 from app.services import cache as C
-from app.config.scanner_config import (
+from app.scanner_config import (
     INDEX_SYMBOLS,
     TOP_50_STOCKS,
     STRIKE_RANGE,
@@ -488,60 +488,94 @@ def get_contract_debug_info(
     strike: float,
     opt_type: str,
 ) -> dict[str, Any]:
+    """
+    Debug helper used by the API to inspect option contract resolution.
+    """
+
     resolved = resolve_symbol(underlying)
-    oc = C.options_cache.get(resolved) or C.options_cache.get(underlying, {})
+
+    oc = (
+        C.options_cache.get(resolved)
+        or C.options_cache.get(underlying)
+        or {}
+    )
+
     available_expiries = get_available_expiries(resolved or underlying)
 
-   upper_expiry = expiry.upper() if expiry else None
+    upper_expiry = expiry.upper() if expiry else None
 
-if upper_expiry:
-    target_expiry = next(
-        (
-            e
-            for e in available_expiries
-            if e.upper() == upper_expiry
-        ),
-        None,
-    )
-else:
-    if is_index(underlying):
-        target_expiry = get_current_weekly_expiry(
-            available_expiries
+    if upper_expiry:
+        target_expiry = next(
+            (
+                e
+                for e in available_expiries
+                if e.upper() == upper_expiry
+            ),
+            None,
         )
     else:
-        target_expiry = get_current_monthly_expiry(
-            available_expiries
-        )
+        if is_index(underlying):
+            target_expiry = get_current_weekly_expiry(
+                available_expiries
+            )
+        else:
+            target_expiry = get_current_monthly_expiry(
+                available_expiries
+            )
+
     contract = None
+
     if target_expiry:
-        strike_data = oc.get(target_expiry, {})
-        contract = strike_data.get(strike, {}).get(opt_type)
+
+        strike_map = oc.get(target_expiry, {})
+
+        contract = strike_map.get(strike, {}).get(opt_type)
+
         if contract is None:
-            # Tolerance search
-            for s, data in strike_data.items():
-                if abs(s - strike) < 0.01:
-                    contract = data.get(opt_type)
+
+            # tolerance search for float strike values
+
+            for s, option_map in strike_map.items():
+
+                if abs(float(s) - float(strike)) < 0.01:
+
+                    contract = option_map.get(opt_type)
+
                     if contract:
+                        strike = s
                         break
 
-    strikes_for_expiry = sorted(
-        oc.get(target_expiry, {}).keys()
-    ) if target_expiry else []
+    strikes_for_expiry = (
+        sorted(oc.get(target_expiry, {}).keys())
+        if target_expiry
+        else []
+    )
+
     try:
         atm_idx = strikes_for_expiry.index(strike)
     except ValueError:
         atm_idx = -1
 
     return {
-        "queried":          {"underlying": underlying, "expiry": expiry, "strike": strike, "type": opt_type},
-        "resolved":         resolved,
-        "targetExpiry":     target_expiry,
+        "queried": {
+            "underlying": underlying,
+            "expiry": expiry,
+            "strike": strike,
+            "type": opt_type,
+        },
+        "resolved": resolved,
+        "targetExpiry": target_expiry,
         "availableExpiries": available_expiries,
-        "contract":         contract,
-        "adjacentStrikes":  strikes_for_expiry[max(0, atm_idx - 3): atm_idx + 4],
-        "cacheStats":       C.get_status(),
+        "contract": contract,
+        "adjacentStrikes": (
+            strikes_for_expiry[
+                max(0, atm_idx - 3): atm_idx + 4
+            ]
+            if atm_idx >= 0
+            else []
+        ),
+        "cacheStats": C.get_status(),
     }
-
 def get_cache_status() -> dict[str, Any]:
     return C.get_status()
 
@@ -565,7 +599,6 @@ def get_scanner_contracts() -> list[dict]:
         if not expiries:
             continue
 
-        # nearest expiry
         if is_index(symbol):
             expiry = get_current_weekly_expiry(expiries)
         else:
