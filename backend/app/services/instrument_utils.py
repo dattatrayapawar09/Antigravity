@@ -492,21 +492,26 @@ def get_contract_debug_info(
     oc = C.options_cache.get(resolved) or C.options_cache.get(underlying, {})
     available_expiries = get_available_expiries(resolved or underlying)
 
-    upper_expiry = expiry.upper() if expiry else None
-    target_expiry = (
-        next((e for e in available_expiries if e.upper() == upper_expiry), None)
-        if upper_expiry:
-            target_expiry = next(
-                (e for e in available_expiries if e.upper() == upper_expiry),
-                None,
-            )
-        else:
-            if is_index(underlying):
-                target_expiry = get_current_weekly_expiry(available_expiries)
-            else:
-                target_expiry = get_current_monthly_expiry(available_expiries)
-    )
+   upper_expiry = expiry.upper() if expiry else None
 
+if upper_expiry:
+    target_expiry = next(
+        (
+            e
+            for e in available_expiries
+            if e.upper() == upper_expiry
+        ),
+        None,
+    )
+else:
+    if is_index(underlying):
+        target_expiry = get_current_weekly_expiry(
+            available_expiries
+        )
+    else:
+        target_expiry = get_current_monthly_expiry(
+            available_expiries
+        )
     contract = None
     if target_expiry:
         strike_data = oc.get(target_expiry, {})
