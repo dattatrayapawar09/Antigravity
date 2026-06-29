@@ -33,6 +33,12 @@ async def startup_init() -> None:
 
         if ok:
             logger.info("[Init] SmartAPI authenticated")
+            
+            logger.info("[Init] Downloading historical data...")
+
+            await run_daily_history_update()
+
+            logger.info("[Init] Historical data loaded.")
         else:
             logger.warning("[Init] Login failed. Running in MOCK mode.")
 

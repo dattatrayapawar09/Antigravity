@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List, Optional
 
 DB_FILE = Path(__file__).resolve().parent.parent / "history.db"
 
@@ -27,12 +27,16 @@ class HistoryDB:
 
         self.conn = sqlite3.connect(
             DB_FILE,
-            check_same_thread=False
+            check_same_thread=False,
         )
 
         self.conn.row_factory = sqlite3.Row
 
         self._create_tables()
+
+    # ---------------------------------------------------------
+    # Create database
+    # ---------------------------------------------------------
 
     def _create_tables(self):
 
@@ -41,23 +45,23 @@ class HistoryDB:
             CREATE TABLE IF NOT EXISTS option_history(
 
                 contract_id TEXT,
-            
+
                 trading_date TEXT,
-            
+
                 open REAL,
-            
+
                 high REAL,
-            
+
                 low REAL,
-            
+
                 close REAL,
-            
+
                 volume INTEGER,
-            
+
                 oi INTEGER,
-            
-                PRIMARY KEY(contract_id,trading_date)
-            
+
+                PRIMARY KEY(contract_id, trading_date)
+
             )
             """
         )
@@ -65,12 +69,49 @@ class HistoryDB:
         self.conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_contract
-
             ON option_history(contract_id)
             """
         )
 
         self.conn.commit()
+
+        self._migrate_schema()
+
+    # ---------------------------------------------------------
+    # Automatic schema migration
+    # ---------------------------------------------------------
+
+    def _migrate_schema(self):
+
+        cur = self.conn.execute(
+            "PRAGMA table_info(option_history)"
+        )
+
+        columns = {row["name"] for row in cur.fetchall()}
+
+        if "open" not in columns:
+
+            self.conn.execute(
+                "ALTER TABLE option_history ADD COLUMN open REAL DEFAULT 0"
+            )
+
+        if "high" not in columns:
+
+            self.conn.execute(
+                "ALTER TABLE option_history ADD COLUMN high REAL DEFAULT 0"
+            )
+
+        if "low" not in columns:
+
+            self.conn.execute(
+                "ALTER TABLE option_history ADD COLUMN low REAL DEFAULT 0"
+            )
+
+        self.conn.commit()
+
+    # ---------------------------------------------------------
+    # Save history
+    # ---------------------------------------------------------
 
     def save_history(
         self,
@@ -83,10 +124,22 @@ class HistoryDB:
         volume: int,
         oi: int,
     ):
-    
+
         self.conn.execute(
             """
-            INSERT OR REPLACE INTO option_history
+            INSERT OR REPLACE INTO option_history(
+
+                contract_id,
+                trading_date,
+                open,
+                high,
+                low,
+                close,
+                volume,
+                oi
+
+            )
+
             VALUES(?,?,?,?,?,?,?,?)
             """,
             (
@@ -100,18 +153,21 @@ class HistoryDB:
                 oi,
             ),
         )
-    
+
         self.conn.commit()
-    
+
         self.cleanup(contract_id)
-        
+
+    # ---------------------------------------------------------
+    # Keep only latest 5 sessions
+    # ---------------------------------------------------------
+
     def cleanup(
         self,
-        contract_id: str
+        contract_id: str,
     ):
 
         self.conn.execute(
-
             """
             DELETE FROM option_history
 
@@ -130,24 +186,21 @@ class HistoryDB:
             )
 
             AND contract_id=?
-
             """,
-
             (
                 contract_id,
-                contract_id
-            )
-
+                contract_id,
+            ),
         )
 
         self.conn.commit()
+            # ---------------------------------------------------------
+    # Read last 5 trading sessions
+    # ---------------------------------------------------------
 
     def get_last_5_days(
-
         self,
-
-        contract_id: str
-
+        contract_id: str,
     ) -> List[Dict]:
 
         cur = self.conn.execute(
@@ -167,17 +220,19 @@ class HistoryDB:
             """,
             (contract_id,),
         )
+
         return [
-            dict(r)
-            for r in cur.fetchall()
+            dict(row)
+            for row in cur.fetchall()
         ]
 
+    # ---------------------------------------------------------
+    # Average Volume
+    # ---------------------------------------------------------
+
     def get_average_volume(
-
         self,
-
-        contract_id: str
-
+        contract_id: str,
     ) -> int:
 
         rows = self.get_last_5_days(contract_id)
@@ -186,100 +241,128 @@ class HistoryDB:
             return 0
 
         return int(
-
             sum(
-                r["volume"]
-                for r in rows
+                row["volume"]
+                for row in rows
             ) / len(rows)
-
         )
-        
-    def get_previous_close(self, contract_id):
-    
+
+    # ---------------------------------------------------------
+    # Previous Close
+    # ---------------------------------------------------------
+
+    def get_previous_close(
+        self,
+        contract_id: str,
+    ) -> float:
+
         rows = self.get_last_5_days(contract_id)
-    
+
+        if not rows:
+            return 0.0
+
+        return float(rows[-1]["close"])
+
+    # ---------------------------------------------------------
+    # Previous Volume
+    # ---------------------------------------------------------
+
+    def get_previous_volume(
+        self,
+        contract_id: str,
+    ) -> int:
+
+        rows = self.get_last_5_days(contract_id)
+
         if not rows:
             return 0
-    
-        return rows[-1]["close"]
-    
-    
-    def get_previous_volume(self, contract_id):
-    
+
+        return int(rows[-1]["volume"])
+
+    # ---------------------------------------------------------
+    # Previous OI
+    # ---------------------------------------------------------
+
+    def get_previous_oi(
+        self,
+        contract_id: str,
+    ) -> int:
+
         rows = self.get_last_5_days(contract_id)
-    
+
         if not rows:
             return 0
-    
-        return rows[-1]["volume"]
-    
-    
-    def get_previous_oi(self, contract_id):
-    
-        rows = self.get_last_5_days(contract_id)
-    
-        if not rows:
-            return 0
-    
-        return rows[-1]["oi"]
+
+        return int(rows[-1]["oi"])
+
+    # ---------------------------------------------------------
+    # Average OI
+    # ---------------------------------------------------------
 
     def get_average_oi(
         self,
         contract_id: str,
     ) -> int:
-    
+
         rows = self.get_last_5_days(contract_id)
-    
+
         if not rows:
             return 0
-    
+
         return int(
-    
-            sum(r["oi"] for r in rows)
-    
-            / len(rows)
-    
+            sum(
+                row["oi"]
+                for row in rows
+            ) / len(rows)
         )
+
+    # ---------------------------------------------------------
+    # Average Close
+    # ---------------------------------------------------------
 
     def get_average_close(
         self,
         contract_id: str,
     ) -> float:
-    
+
         rows = self.get_last_5_days(contract_id)
-    
+
         if not rows:
             return 0.0
-    
+
         return round(
-            sum(r["close"] for r in rows) / len(rows),
+            sum(
+                row["close"]
+                for row in rows
+            ) / len(rows),
             2,
         )
-    from typing import Optional
+            # ---------------------------------------------------------
+    # Last Record
+    # ---------------------------------------------------------
 
     def get_last_record(
         self,
         contract_id: str,
     ) -> Optional[Dict]:
-    
-        rows = self.get_last_5_days(contract_id)
-    
-        if not rows:
-    
-            return None
-    
-        return rows[-1]
-        
-    def close(self):
 
-        self.conn.close()
+        rows = self.get_last_5_days(contract_id)
+
+        if not rows:
+            return None
+
+        return rows[-1]
+
+    # ---------------------------------------------------------
+    # Already Updated Today?
+    # ---------------------------------------------------------
 
     def already_updated(
         self,
         contract_id: str,
         trade_date: str,
     ) -> bool:
-    
+
         cur = self.conn.execute(
             """
             SELECT COUNT(*)
@@ -292,6 +375,65 @@ class HistoryDB:
                 trade_date,
             ),
         )
-    
+
         return cur.fetchone()[0] > 0
+
+    # ---------------------------------------------------------
+    # Delete History
+    # ---------------------------------------------------------
+
+    def delete_contract_history(
+        self,
+        contract_id: str,
+    ):
+
+        self.conn.execute(
+            """
+            DELETE FROM option_history
+            WHERE contract_id=?
+            """,
+            (contract_id,),
+        )
+
+        self.conn.commit()
+
+    # ---------------------------------------------------------
+    # Total Records
+    # ---------------------------------------------------------
+
+    def total_records(self) -> int:
+
+        cur = self.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM option_history
+            """
+        )
+
+        return cur.fetchone()[0]
+
+    # ---------------------------------------------------------
+    # Database Status
+    # ---------------------------------------------------------
+
+    def get_status(self) -> Dict:
+
+        return {
+            "database": str(DB_FILE),
+            "records": self.total_records(),
+        }
+
+    # ---------------------------------------------------------
+    # Close Connection
+    # ---------------------------------------------------------
+
+    def close(self):
+
+        self.conn.close()
+
+
+# ---------------------------------------------------------
+# Singleton Instance
+# ---------------------------------------------------------
+
 history_db = HistoryDB()
