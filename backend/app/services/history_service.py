@@ -168,7 +168,7 @@ def save_history(contract_id: str, candles: list):
     # Keep only latest 5 sessions
     # Keep only latest 5 sessions
     candles = candles[-5:]
-
+    logger.info("Sample candle: %s", candles[0])
     for candle in candles:
 
         try:
@@ -177,10 +177,13 @@ def save_history(contract_id: str, candles: list):
 
             history_db.save_history(
                 contract_id=contract_id,
-                trade_date=trade_date,
-                volume=int(candle["volume"]),
+                trading_date=trade_date,
+                open_price=float(candle["open"]),
+                high=float(candle["high"]),
+                low=float(candle["low"]),
                 close=float(candle["close"]),
-                oi=0      # Historical API doesn't return OI
+                volume=int(candle["volume"]),
+                oi=int(candle.get("oi", 0)),
             )
 
         except Exception as e:
