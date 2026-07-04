@@ -201,6 +201,22 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         )
 
     # ── Step 4: Assemble final option records ──────────────────────────────────
+    # ----------------------------------------------------
+    # Load historical data in ONE SQLite query
+    # ----------------------------------------------------
+
+    contract_ids = []
+
+    for contract in token_to_contract_map.values():
+
+        contract_ids.append(
+            f"{contract['underlying']}_"
+            f"{contract['strike']}_"
+            f"{contract['type']}"
+        )
+
+    history_map = history_db.get_history_map(contract_ids)
+
     all_options: list[OptionContract] = []
 
     for instr in option_tokens_to_fetch:
@@ -244,27 +260,26 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             f"{contract['type']}"
         )
         
-        history = history_db.get_last_5_days(contract_id)
+        history = history_map.get(contract_id, [])
         
         historicalVolumes = [
             h["volume"]
             for h in history
         ]
         
-        avgVol = history_db.get_average_volume(contract_id)
+        avgVol = (
+            int(sum(h["volume"] for h in history) / len(history))
+            if history
+            else 0
+        )
 
         if avgVol <= 0:
-            avgVol = max(volume, 1)
-        # ---------------------------------------
-        # Calculate Volume Ratio
-        # ---------------------------------------
-        
-        volumeRatio = round(
-        
-            volume / max(avgVol, 1),
-        
-            2,
-        
+            avgVol = 0
+
+        volumeRatio = (
+            round(volume / avgVol, 2)
+            if avgVol > 0
+            else 0
         )
         
         # ---------------------------------------
@@ -416,7 +431,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         # Scanner Mode Selection
         # ----------------------------------------------------
         
-        if body.mode.value == "index":
+    if body.mode.value == "index":
         
             final_options = [
                 o
@@ -431,7 +446,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         
             final_options = final_options[:50]
         
-        elif body.mode.value == "all":
+    elif body.mode.value == "all":
         
             final_options = sorted(
                 all_options,
@@ -439,7 +454,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 reverse=True,
             )[:50]
         
-        else:
+    else:
         
             final_options = top_stock_options
         
@@ -448,12 +463,12 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         # Ranking
         # ----------------------------------------------------
         
-        for idx, option in enumerate(final_options, start=1):
+    for idx, option in enumerate(final_options, start=1):
         
             option.rank = idx
         
         
-        return OptionsResponse(
+    return OptionsResponse(
         
             options=final_options,
         

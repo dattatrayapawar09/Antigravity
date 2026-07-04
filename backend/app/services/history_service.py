@@ -2,7 +2,7 @@
 history_service.py
 
 Downloads historical option data from Angel One and stores the
-last 5 trading sessions in SQLite.
+latest five trading sessions for scanner contracts.
 
 Production Version
 """
@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any
 
 from app.database import history_db
 from app.smartapi import get_client
@@ -25,29 +24,33 @@ from app.scanner_config import (
 
 logger = logging.getLogger(__name__)
 
-# ----------------------------------------------------
+# ------------------------------------------------------------------
 # Configuration
-# ----------------------------------------------------
+# ------------------------------------------------------------------
 
 INTERVAL = "ONE_DAY"
 
 LOOKBACK_DAYS = 10
 
-MAX_CONCURRENT_REQUESTS = 8
+# Angel One historical API rate limit
+MAX_CONCURRENT_REQUESTS = 2
 
 MAX_RETRIES = 3
 
 RETRY_DELAY = 1
 
+REQUEST_DELAY = 0.35
+
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-# ----------------------------------------------------
+
+# ------------------------------------------------------------------
 # Date Helpers
-# ----------------------------------------------------
+# ------------------------------------------------------------------
 
 def get_date_range() -> tuple[str, str]:
     """
-    Return date range for historical API.
+    Returns the date range used for historical download.
     """
 
     today = datetime.now()
@@ -59,14 +62,18 @@ def get_date_range() -> tuple[str, str]:
         today.strftime("%Y-%m-%d 15:30"),
     )
 
-# ----------------------------------------------------
+
+# ------------------------------------------------------------------
 # Retry Wrapper
-# ----------------------------------------------------
+# ------------------------------------------------------------------
 
 async def fetch_history(
     exchange: str,
     token: str,
 ):
+    """
+    Download historical candles with retry logic.
+    """
 
     client = get_client()
 
@@ -77,28 +84,22 @@ async def fetch_history(
         try:
 
             candles = await client.get_historical_data(
-
                 exchange=exchange,
-
                 symboltoken=token,
-
                 interval=INTERVAL,
-
                 from_date=from_date,
-
                 to_date=to_date,
-
             )
 
             if candles:
-
                 return candles
 
         except Exception as e:
 
             logger.warning(
-                "[History] Retry %d : %s",
+                "[History] Retry %d/%d : %s",
                 attempt + 1,
+                MAX_RETRIES,
                 e,
             )
 
@@ -106,15 +107,14 @@ async def fetch_history(
 
     return None
 
-# ----------------------------------------------------
-# Download one contract
-# ----------------------------------------------------
+
+# ------------------------------------------------------------------
+# Download one option contract
+# ------------------------------------------------------------------
 
 async def download_contract_history(contract: dict):
 
     async with semaphore:
-
-        client = get_client()
 
         contract_id = (
             f"{contract['underlying']}_"
@@ -122,53 +122,75 @@ async def download_contract_history(contract: dict):
             f"{contract['type']}"
         )
 
-        from_date, to_date = get_date_range()
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # Skip if already downloaded today
+        if history_db.already_updated(
+            contract_id,
+            today,
+        ):
+            logger.debug(
+                "[History] Already updated %s",
+                contract_id,
+            )
+            return
 
         logger.info(
             "[History] Downloading %s",
-            contract_id
+            contract_id,
         )
 
-        exchange = contract.get("exch_seg") or contract.get("exchange")
-        token = contract.get("token") or contract.get("symboltoken")
+        exchange = (
+            contract.get("exchange")
+            or contract.get("exch_seg")
+        )
 
-        candles = await client.get_historical_data(
+        token = (
+            contract.get("symboltoken")
+            or contract.get("token")
+        )
+
+        candles = await fetch_history(
             exchange=exchange,
-            symboltoken=token,
-            interval=INTERVAL,
-            from_date=from_date,
-            to_date=to_date,
+            token=token,
         )
 
         if not candles:
+
             logger.warning(
                 "[History] No candles for %s",
                 contract_id,
             )
-            return
-        save_history(contract_id, candles)
-        if not candles:
-            logger.warning(
-                "[History] No candles for %s",
-                contract_id,
-            )
+
             return
 
-        save_history(contract_id, candles)
+        save_history(
+            contract_id,
+            candles,
+        )
 
-# ----------------------------------------------------
+        # Prevent Angel One rate limiting
+        await asyncio.sleep(REQUEST_DELAY)
+# ------------------------------------------------------------------
 # Save candles into SQLite
-# ----------------------------------------------------
+# ------------------------------------------------------------------
 
-def save_history(contract_id: str, candles: list):
+def save_history(
+    contract_id: str,
+    candles: list,
+):
+    """
+    Save the latest five historical candles into SQLite.
+    """
 
     if not candles:
         return
 
-    # Keep only latest 5 sessions
-    # Keep only latest 5 sessions
+    # Keep only the latest 5 sessions
     candles = candles[-5:]
-    logger.info("Sample candle: %s", candles[0])
+
+    saved = 0
+
     for candle in candles:
 
         try:
@@ -186,47 +208,28 @@ def save_history(contract_id: str, candles: list):
                 oi=int(candle.get("oi", 0)),
             )
 
+            saved += 1
+
         except Exception as e:
 
             logger.exception(
                 "[History] SQLite insert failed %s : %s",
                 contract_id,
-                e
+                e,
             )
-
-    logger.info(
-        "[History] Saved %d candles for %s",
-        len(candles),
-        contract_id
-    )
 
     history_db.cleanup(contract_id)
 
+    logger.info(
+        "[History] Saved %d candles for %s",
+        saved,
+        contract_id,
+    )
 
-# ----------------------------------------------------
-# Keep only latest 5 rows
-# ----------------------------------------------------
 
-
-
-    try:
-
-        history_db.delete_old_history(
-            contract_id=contract_id,
-            keep_last=5
-        )
-
-    except Exception as e:
-
-        logger.exception(
-            "[History] Cleanup failed %s : %s",
-            contract_id,
-            e
-        )
-
-# ----------------------------------------------------
-# Download history for every option contract
-# ----------------------------------------------------
+# ------------------------------------------------------------------
+# Download history for scanner contracts
+# ------------------------------------------------------------------
 
 async def update_all_option_history():
 
@@ -237,43 +240,54 @@ async def update_all_option_history():
     contracts = await build_scanner_contracts()
 
     if not contracts:
+
         logger.warning(
-            "[History] No option contracts available."
+            "[History] No scanner contracts found."
         )
+
         return
 
     logger.info(
-        "[History] %d contracts found",
-        len(contracts)
+        "[History] %d scanner contracts",
+        len(contracts),
     )
-
-    tasks = [
-        download_contract_history(contract)
-        for contract in contracts
-    ]
 
     completed = 0
 
-    for future in asyncio.as_completed(tasks):
+    #
+    # NOTE:
+    # We intentionally process sequentially.
+    #
+    # download_contract_history() already uses
+    # a semaphore + request delay.
+    #
+    # This avoids creating hundreds of asyncio
+    # tasks at once which causes Angel One
+    # historical API rate limiting.
+    #
+    for contract in contracts:
 
         try:
-            await future
+
+            await download_contract_history(
+                contract
+            )
 
         except Exception as e:
 
             logger.exception(
                 "[History] Worker failed : %s",
-                e
+                e,
             )
 
         completed += 1
 
-        if completed % 500 == 0:
+        if completed % 10 == 0 or completed == len(contracts):
 
             logger.info(
                 "[History] Progress : %d / %d",
                 completed,
-                len(tasks)
+                len(contracts),
             )
 
     logger.info(
@@ -281,9 +295,9 @@ async def update_all_option_history():
     )
 
 
-# ----------------------------------------------------
+# ------------------------------------------------------------------
 # Scheduler Entry Point
-# ----------------------------------------------------
+# ------------------------------------------------------------------
 
 async def run_daily_history_update():
 
@@ -295,55 +309,124 @@ async def run_daily_history_update():
 
         logger.exception(
             "[History] Daily update failed : %s",
-            e
+            e,
         )
-async def build_scanner_contracts():
+
+# ------------------------------------------------------------------
+# Build scanner contracts
+# ------------------------------------------------------------------
+
+async def build_scanner_contracts() -> list[dict]:
+    """
+    Build only the option contracts required by the scanner.
+
+    For every tracked symbol:
+
+        • Get live spot price
+        • Generate nearest expiry option chain
+        • Keep ATM ± STRIKE_RANGE
+    """
 
     client = get_client()
 
-    contracts = []
+    contracts: list[dict] = []
 
     symbols = INDEX_SYMBOLS + TOP_50_STOCKS
 
+    logger.info(
+        "[History] Building scanner contracts..."
+    )
+
     for symbol in symbols:
 
-        cash = IU.get_cash_token(symbol)
+        try:
 
-        if not cash:
-            continue
-    cash_instruments = []
-    
-    for symbol in symbols:
-    
-        cash = IU.get_cash_token(symbol)
-    
-        if cash:
-            cash_instruments.append({
-                "exchange": cash["exchange"],
-                "symboltoken": cash["symboltoken"],
-            })
+            cash = IU.get_cash_token(symbol)
+
+            if not cash:
+
+                logger.warning(
+                    "[History] Cash token not found : %s",
+                    symbol,
+                )
+
+                continue
+
             ltp = await client.get_ltp_data(
                 cash["exchange"],
                 cash["tradingsymbol"],
                 cash["symboltoken"],
             )
 
-        if not ltp:
-            continue
+            if not ltp:
 
-        spot = float(ltp["ltp"])
+                logger.warning(
+                    "[History] LTP unavailable : %s",
+                    symbol,
+                )
 
-        mapping = IU.generate_option_chain_mapping(
-            underlying=symbol,
-            expiry=None,
-            spot_price=spot,
-            num_strikes=STRIKE_RANGE,
-        )
+                continue
 
-        if "error" in mapping:
-            continue
+            spot = float(ltp.get("ltp", 0))
 
-        contracts.extend(mapping["chain"])
+            if spot <= 0:
+                logger.warning(
+                    "[History] Invalid spot price for %s",
+                    symbol,
+                )
+                continue
+
+            mapping = IU.generate_option_chain_mapping(
+                underlying=symbol,
+                expiry=None,
+                spot_price=spot,
+                num_strikes=STRIKE_RANGE,
+            )
+
+            if not mapping:
+
+                continue
+
+            if "error" in mapping:
+
+                logger.warning(
+                    "[History] %s : %s",
+                    symbol,
+                    mapping["error"],
+                )
+
+                continue
+
+            chain = mapping.get(
+                "chain",
+                [],
+            )
+
+            if not chain:
+
+                logger.warning(
+                    "[History] Empty chain : %s",
+                    symbol,
+                )
+
+                continue
+
+            contracts.extend(chain)
+
+            logger.info(
+                "[History] %-12s Spot=%10.2f Contracts=%3d",
+                symbol,
+                spot,
+                len(chain),
+            )
+
+        except Exception as e:
+
+            logger.exception(
+                "[History] Failed building contracts for %s : %s",
+                symbol,
+                e,
+            )
 
     logger.info(
         "[History] Scanner Contracts : %d",

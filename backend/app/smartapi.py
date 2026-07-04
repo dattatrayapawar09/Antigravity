@@ -192,7 +192,19 @@ class SmartAPIClient:
 
                     )
 
-                data = response.json()
+                if response.status_code != 200:
+                    logger.error(
+                        "[Historical] %s\n%s",
+                        response.status_code,
+                        response.text,
+                    )
+                    return []
+
+                try:
+                    data = response.json()
+                except Exception:
+                    logger.error(response.text)
+                    return []
 
                 if (
 
@@ -465,20 +477,34 @@ class SmartAPIClient:
 
             async with httpx.AsyncClient(timeout=30.0) as client:
 
-                response = await client.post(
+                logger.info("[Historical] Payload: %s", payload)
+                headers = self._base_headers(with_auth=True).copy()
 
-                    _HISTORICAL_API,
+                if "Authorization" in headers:
+                    headers["Authorization"] = "Bearer ****"
 
-                    json=payload,
-
-                    headers=self._base_headers(
-                        with_auth=True
-                    ),
-
+                logger.info(
+                    "[Historical] Headers: %s",
+                    headers,
                 )
 
-            data = response.json()
+                response = await client.post(
+                    _HISTORICAL_API,
+                    json=payload,
+                    headers=self._base_headers(with_auth=True),
+                )
 
+                logger.error("[Historical] Status: %s", response.status_code)
+                logger.error("[Historical] Body: %s", response.text)
+
+                if response.status_code != 200:
+                    return None
+
+                try:
+                    data = response.json()
+                except Exception:
+                    logger.exception("Invalid JSON received")
+                    return None
             if not data.get("status"):
 
                 logger.warning(

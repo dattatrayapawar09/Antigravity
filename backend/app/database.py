@@ -194,7 +194,45 @@ class HistoryDB:
         )
 
         self.conn.commit()
-            # ---------------------------------------------------------
+        
+    def get_history_map(
+        self,
+        contract_ids: list[str],
+    ) -> dict[str, list[dict]]:
+
+        if not contract_ids:
+            return {}
+
+        placeholders = ",".join("?" * len(contract_ids))
+
+        cur = self.conn.execute(
+            f"""
+            SELECT
+                contract_id,
+                trading_date,
+                open,
+                high,
+                low,
+                close,
+                volume,
+                oi
+            FROM option_history
+            WHERE contract_id IN ({placeholders})
+            ORDER BY contract_id, trading_date
+            """,
+            contract_ids,
+        )
+
+        history_map: dict[str, list[dict]] = {}
+
+        for row in cur.fetchall():
+            history_map.setdefault(
+                row["contract_id"],
+                [],
+            ).append(dict(row))
+
+        return history_map
+    # ---------------------------------------------------------
     # Read last 5 trading sessions
     # ---------------------------------------------------------
 
