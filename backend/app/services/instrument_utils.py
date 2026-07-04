@@ -279,13 +279,17 @@ async def fetch_and_cache_scrip_master() -> None:
             continue
 
         # Parse option type from symbol
+        
+        option_type = (
+            "CE" if symbol.endswith("CE")
+            else "PE" if symbol.endswith("PE")
+            else None
+        )
+
+        norm_strike = normalise_strike(raw_strike)
+
+        # Parse expiry only if needed
         parsed = parse_option_symbol(symbol)
-        if parsed:
-            option_type = parsed["type"]
-            norm_strike = parsed["strike"]
-        else:
-            option_type = "CE" if symbol.endswith("CE") else ("PE" if symbol.endswith("PE") else None)
-            norm_strike = normalise_strike(raw_strike)
 
         if not option_type:
             skipped_bad_symbol += 1
