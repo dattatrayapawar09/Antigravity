@@ -17,7 +17,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional
-
+from datetime import datetime
 DB_FILE = Path(__file__).resolve().parent.parent / "history.db"
 
 
@@ -375,7 +375,7 @@ class HistoryDB:
             ) / len(rows),
             2,
         )
-            # ---------------------------------------------------------
+    # ---------------------------------------------------------
     # Last Record
     # ---------------------------------------------------------
 
@@ -401,6 +401,39 @@ class HistoryDB:
         trade_date: str,
     ) -> bool:
 
+        cur = self.conn.execute(
+            """
+            SELECT 1
+            FROM option_history
+            WHERE contract_id = ?
+              AND trading_date = ?
+            LIMIT 1
+            """,
+            (
+                contract_id,
+                trade_date,
+            ),
+        )
+
+        return cur.fetchone() is not None
+    
+    def history_already_downloaded_today(self) -> bool:
+
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        cur = self.conn.execute(
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM option_history
+                WHERE trading_date = ?
+                LIMIT 1
+            )
+            """,
+            (today,),
+        )
+
+        return bool(cur.fetchone()[0])
         cur = self.conn.execute(
             """
             SELECT COUNT(*)

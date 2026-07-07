@@ -312,6 +312,14 @@ async def update_all_option_history():
 
 async def run_daily_history_update():
 
+    if history_db.history_already_downloaded_today():
+
+        logger.info(
+            "[History] Today's history already exists. Skipping download."
+        )
+        return
+
+    await update_all_option_history()
     try:
 
         await update_all_option_history()

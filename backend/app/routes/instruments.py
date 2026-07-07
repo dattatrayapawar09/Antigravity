@@ -261,7 +261,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             f"{contract['strike']}_"
             f"{contract['type']}"
         )
-        
+        print(q)
         history = history_map.get(contract_id, [])
         
         historicalVolumes = [
