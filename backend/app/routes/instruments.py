@@ -244,6 +244,8 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 contract.get("underlying"), contract.get("strike"),
                 contract.get("type"), contract.get("token"),
             )
+        logger.info("[RAW OPTION QUOTE] %s", q)
+                   
         price = float(q.get("ltp") or 0) if q else 0.0
         
         prev_price = float(q.get("close") or price) if q else price

@@ -19,7 +19,8 @@ from app.services import instrument_utils as IU
 from app.scanner_config import (
     INDEX_SYMBOLS,
     TOP_50_STOCKS,
-    STRIKE_RANGE,
+    INDEX_STRIKE_RANGE,
+    STOCK_STRIKE_RANGE,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ MAX_RETRIES = 3
 
 RETRY_DELAY = 1
 
-REQUEST_DELAY = 0.5
+REQUEST_DELAY = 1.25
 
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
@@ -157,8 +158,18 @@ async def download_contract_history(contract: dict):
 
         if not candles:
 
-            logger.warning(
-                "[History] No candles for %s",
+            logger.debug(
+                "[History] No history for %s",
+                contract_id,
+            )
+
+            return
+
+        # Ignore contracts with zero traded volume
+        if sum(c["volume"] for c in candles) == 0:
+
+            logger.debug(
+                "[History] Zero volume history %s",
                 contract_id,
             )
 
@@ -375,12 +386,22 @@ async def build_scanner_contracts() -> list[dict]:
                     symbol,
                 )
                 continue
+            
+            strike_range = (
+                INDEX_STRIKE_RANGE
+                if symbol in INDEX_SYMBOLS
+                else STOCK_STRIKE_RANGE
+            )
 
             mapping = IU.generate_option_chain_mapping(
                 underlying=symbol,
                 expiry=None,
                 spot_price=spot,
-                num_strikes=STRIKE_RANGE,
+                num_strikes = (
+                    INDEX_STRIKE_RANGE
+                    if symbol in INDEX_SYMBOLS
+                    else STOCK_STRIKE_RANGE
+                ),
             )
 
             if not mapping:

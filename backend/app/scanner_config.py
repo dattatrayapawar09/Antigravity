@@ -86,7 +86,11 @@ TOP_50_STOCKS = [
 # SCANNER SETTINGS
 # ---------------------------------------------------
 
-STRIKE_RANGE = 10
+# Number of strikes on each side of ATM
+
+INDEX_STRIKE_RANGE = 10
+
+STOCK_STRIKE_RANGE = 5
 
 TOP_RESULTS = 50
 
