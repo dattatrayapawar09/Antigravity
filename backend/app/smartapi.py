@@ -55,7 +55,6 @@ class SmartAPIClient:
             "[SmartAPI] Client initialised : %s",
             self._client_id,
         )
-
     # --------------------------------------------------------------
 
     def _generate_totp(self) -> str:
@@ -324,7 +323,12 @@ class SmartAPIClient:
                 )
 
             data = response.json()
+            import json
 
+            logger.info(
+                "[SmartAPI Quote Response]\n%s",
+                json.dumps(data, indent=2)
+            )
             return data.get("data")
 
         except Exception as e:
@@ -332,7 +336,7 @@ class SmartAPIClient:
             logger.exception(e)
 
             return None
-
+    
     # --------------------------------------------------------------
     # LTP API
     # --------------------------------------------------------------

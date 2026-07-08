@@ -326,6 +326,18 @@ async def fetch_and_cache_scrip_master() -> None:
                 continue  # keep existing
 
         C.options_cache[name][expiry][norm_strike][option_type] = contract
+
+        if name == "SUNPHARMA":
+            logger.info(
+                "[CACHE] %s | %s | %.2f | %s | exch=%s | token=%s | symbol=%s",
+                name,
+                expiry,
+                norm_strike,
+                option_type,
+                exch_seg,
+                token,
+                symbol,
+            )
         C.token_to_contract[str(token)] = {
             **contract,
             "underlying": unresolve_symbol(name) or name,
