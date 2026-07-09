@@ -526,23 +526,15 @@ class SmartAPIClient:
             for row in data.get("data", []):
 
                 candles.append(
-
                     {
-
                         "datetime": row[0],
-
                         "open": float(row[1]),
-
                         "high": float(row[2]),
-
                         "low": float(row[3]),
-
                         "close": float(row[4]),
-
                         "volume": int(row[5]),
-
+                        "oi": int(row[6]) if len(row) > 6 else 0,
                     }
-
                 )
 
             logger.info(

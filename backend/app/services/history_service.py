@@ -198,7 +198,7 @@ def save_history(
         return
 
     # Keep only the latest 5 sessions
-    candles = candles[-5:]
+    candles = candles[-6:]
 
     saved = 0
 
@@ -319,11 +319,9 @@ async def run_daily_history_update():
         )
         return
 
-    await update_all_option_history()
     try:
-
         await update_all_option_history()
-
+    
     except Exception as e:
 
         logger.exception(
@@ -439,7 +437,16 @@ async def build_scanner_contracts() -> list[dict]:
                 )
 
                 continue
-
+            for c in chain[:4]:
+                logger.info(
+                    "[CHAIN] %s %s %.0f %s exch=%s token=%s",
+                    c["underlying"],
+                    c["expiry"],
+                    c["strike"],
+                    c["type"],
+                    c["exch_seg"],
+                    c["token"],
+                )
             contracts.extend(chain)
 
             logger.info(

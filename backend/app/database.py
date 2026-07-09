@@ -251,10 +251,21 @@ class HistoryDB:
                 close,
                 volume,
                 oi
-            FROM option_history
-            WHERE contract_id=?
+            FROM (
+                SELECT
+                    trading_date,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    oi
+                FROM option_history
+                WHERE contract_id = ?
+                ORDER BY trading_date DESC
+                LIMIT 5
+            )
             ORDER BY trading_date ASC
-            LIMIT 5
             """,
             (contract_id,),
         )
@@ -432,22 +443,6 @@ class HistoryDB:
             """,
             (today,),
         )
-
-        return bool(cur.fetchone()[0])
-        cur = self.conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM option_history
-            WHERE contract_id=?
-            AND trading_date=?
-            """,
-            (
-                contract_id,
-                trade_date,
-            ),
-        )
-
-        return cur.fetchone()[0] > 0
 
     # ---------------------------------------------------------
     # Delete History

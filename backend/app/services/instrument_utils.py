@@ -166,17 +166,22 @@ def get_current_weekly_expiry(expiries: list[str]) -> str | None:
         return None
     return sort_expiries(expiries)[0]
 
-
 def get_current_monthly_expiry(expiries: list[str]) -> str | None:
     if not expiries:
         return None
 
     expiries = sort_expiries(expiries)
 
-    if len(expiries) >= 4:
-        return expiries[3]
+    months_seen = set()
 
-    return expiries[-1]
+    for exp in expiries:
+        month = exp[2:]      # JUL2026, AUG2026, SEP2026
+
+        if month not in months_seen:
+            months_seen.add(month)
+            return exp
+
+    return expiries[0]
 # ── Scrip Master loader ───────────────────────────────────────────────────────
 
 async def fetch_and_cache_scrip_master() -> None:
@@ -320,10 +325,20 @@ async def fetch_and_cache_scrip_master() -> None:
 
         # Deduplication: keep the contract with the smaller (primary) token number
         existing_contract = C.options_cache[name][expiry][norm_strike].get(option_type)
+
+        # Prefer NFO over BFO for stock derivatives
         if existing_contract:
             duplicate_strikes += 1
-            if int(token) >= int(existing_contract["token"]):
-                continue  # keep existing
+
+            # Existing is NFO -> keep it
+            if existing_contract["exch_seg"] == "NFO":
+                continue
+
+            # New one is NFO -> replace BFO
+            if exch_seg == "NFO":
+                pass
+            else:
+                continue
 
         C.options_cache[name][expiry][norm_strike][option_type] = contract
 

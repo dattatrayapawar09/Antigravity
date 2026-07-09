@@ -270,9 +270,11 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             for h in history
         ]
         
+        previous_history = history[:-1] if len(history) >= 2 else []
+
         avgVol = (
-            int(sum(h["volume"] for h in history) / len(history))
-            if history
+            int(sum(h["volume"] for h in previous_history) / len(previous_history))
+            if previous_history
             else 0
         )
 
@@ -290,13 +292,9 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         # ---------------------------------------
         
         previousSessionOi = (
-        
-            history[-1]["oi"]
-        
-            if history
-        
+            history[-2]["oi"]
+            if len(history) >= 2
             else 0
-        
         )
         
         oiChange = oi - previousSessionOi
@@ -307,16 +305,16 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         )
         
         smartScore = round(
-            (volumeRatio * 40)
-            + ((oiChange / max(oi, 1)) * 30)
-            + (priceMomentum * 15)
-            + (iv * 10),
+            min(volumeRatio, 5) * 40
+            + min(abs(oiChange) / max(oi, 1), 1) * 30
+            + min(abs(priceMomentum), 10) * 1.5
+            + min(iv, 100) * 0.1,
             2,
         )
         previousSessionVolume = (
-            historicalVolumes[-1]
-            if historicalVolumes
-            else max(1, int(volume * 0.85))
+            history[-2]["volume"]
+            if len(history) >= 2
+            else 0
         )
         
         previousSessionOi = (
@@ -326,8 +324,8 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         )
         
         prevPrice = (
-            history[-1]["close"]
-            if history
+            history[-2]["close"]
+            if len(history) >= 2
             else prev_price
         )
         
