@@ -1,29 +1,140 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+
+import {
+  lazy,
+  Suspense,
+  useEffect,
+} from "react";
+
+import { useLocation } from "react-router-dom";
 
 import MainLayout from "./layouts/MainLayout";
 
-import Dashboard from "./pages/Dashboard";
-import IndexOptions from "./pages/IndexOptions";
-import StockOptions from "./pages/StockOptions";
-import AllScanner from "./pages/AllScanner";
-import Watchlist from "./pages/Watchlist";
-import Settings from "./pages/Settings";
+import Loading from "./components/Loading";
+
+/* ============================================================
+   Lazy Loaded Pages
+============================================================ */
+
+const Dashboard = lazy(() =>
+  import("./pages/Dashboard")
+);
+
+const IndexOptions = lazy(() =>
+  import("./pages/IndexOptions")
+);
+
+const StockOptions = lazy(() =>
+  import("./pages/StockOptions")
+);
+
+const AllScanner = lazy(() =>
+  import("./pages/AllScanner")
+);
+
+const Watchlist = lazy(() =>
+  import("./pages/Watchlist")
+);
+
+const Settings = lazy(() =>
+  import("./pages/Settings")
+);
+
+/* ============================================================
+   Scroll To Top
+============================================================ */
+
+function ScrollToTop() {
+
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+
+  }, [pathname]);
+
+  return null;
+
+}
+
+/* ============================================================
+   App
+============================================================ */
 
 function App() {
-  return (
-    <MainLayout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/index" element={<IndexOptions />} />
-        <Route path="/stocks" element={<StockOptions />} />
-        <Route path="/scanner" element={<AllScanner />} />
-        <Route path="/watchlist" element={<Watchlist />} />
-        <Route path="/settings" element={<Settings />} />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </MainLayout>
+  return (
+
+    <>
+
+      <ScrollToTop />
+
+      <MainLayout>
+
+        <Suspense fallback={<Loading />}>
+
+          <Routes>
+
+            <Route
+              path="/"
+              element={<Dashboard />}
+            />
+
+            <Route
+              path="/index"
+              element={<IndexOptions />}
+            />
+
+            <Route
+              path="/stocks"
+              element={<StockOptions />}
+            />
+
+            <Route
+              path="/scanner"
+              element={<AllScanner />}
+            />
+
+            <Route
+              path="/watchlist"
+              element={<Watchlist />}
+            />
+
+            <Route
+              path="/settings"
+              element={<Settings />}
+            />
+
+            {/* Redirect Unknown Routes */}
+
+            <Route
+              path="*"
+              element={
+                <Navigate
+                  to="/"
+                  replace
+                />
+              }
+            />
+
+          </Routes>
+
+        </Suspense>
+
+      </MainLayout>
+
+    </>
+
   );
+
 }
 
 export default App;

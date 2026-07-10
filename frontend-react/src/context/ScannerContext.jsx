@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -25,85 +26,128 @@ const ScannerContext = createContext(null);
 
 export function ScannerProvider({ children }) {
 
-  /* ============================
-     Active Scanner
-  ============================ */
+  /* ============================================================
+     Active Scanner Tab
+  ============================================================ */
 
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] =
+    useState("all");
 
-  /* ============================
+  /* ============================================================
      Market Data
-  ============================ */
+  ============================================================ */
 
-  const [options, setOptions] = useState([]);
+  const [options, setOptions] =
+    useState([]);
 
-  const [spotPrices, setSpotPrices] = useState({});
+  const [spotPrices, setSpotPrices] =
+    useState({});
 
-  const [expiries, setExpiries] = useState([]);
+  const [expiries, setExpiries] =
+    useState([]);
 
-  /* ============================
+  /* ============================================================
+     Filters
+  ============================================================ */
+
+  const [filters, setFilters] =
+    useState({
+
+      expiry: "",
+
+      type: "ALL",
+
+      signal: "ALL",
+
+      search: "",
+
+      minRatio: 1,
+
+    });
+
+  /* ============================================================
      Loading
-  ============================ */
+  ============================================================ */
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] =
+    useState(false);
 
   const [backendConnected, setBackendConnected] =
     useState(false);
 
-  const [error, setError] = useState("");
+  const [error, setError] =
+    useState("");
 
   const [lastRefresh, setLastRefresh] =
-    useState(null);
+    useState(() => {
 
-  /* ============================
-     Filters
-  ============================ */
+      const value =
+        localStorage.getItem("lastRefresh");
 
-  const [filters, setFilters] = useState({
+      return value
+        ? new Date(value)
+        : null;
 
-    expiry: "",
+    });
 
-    type: "ALL",
+  /* ============================================================
+     Settings
+  ============================================================ */
 
-    signal: "ALL",
+  const [refreshInterval, setRefreshInterval] =
+    useState(() =>
 
-    search: "",
+      Number(
+        localStorage.getItem(
+          "refreshInterval"
+        ) || 10
+      )
 
-    minRatio: 1,
+    );
 
-  });
+  const [theme, setTheme] =
+    useState(() =>
 
-  /* ============================
+      localStorage.getItem("theme") ||
+      "dark"
+
+    );
+
+  /* ============================================================
      Watchlist
-  ============================ */
+  ============================================================ */
 
-  const [watchlist, setWatchlist] = useState(() => {
+  const [watchlist, setWatchlist] =
+    useState(() => {
 
-    try {
+      try {
 
-      return JSON.parse(
+        return JSON.parse(
 
-        localStorage.getItem("watchlist") || "[]"
+          localStorage.getItem(
+            "watchlist"
+          ) || "[]"
 
-      );
+        );
 
-    } catch {
+      } catch {
 
-      return [];
+        return [];
 
-    }
+      }
 
-  });
+    });
 
-  /* ============================
-     Prevent Multiple Refreshes
-  ============================ */
+  /* ============================================================
+     Prevent Duplicate Refreshes
+  ============================================================ */
 
-  const refreshing = useRef(false);
+  const refreshing =
+    useRef(false);
 
-  /* ============================
-     Backend Health
-  ============================ */
+  /* ============================================================
+     Backend Health Check
+  ============================================================ */
 
   const checkBackend = useCallback(async () => {
 
@@ -112,13 +156,20 @@ export function ScannerProvider({ children }) {
       const result = await pingBackend();
 
       const online =
-        result?.status !== "offline";
+        result?.status === "ok" ||
+        result?.status === "healthy" ||
+        result?.success === true;
 
       setBackendConnected(online);
 
       return online;
 
-    } catch {
+    } catch (err) {
+
+      console.error(
+        "Backend health check failed:",
+        err
+      );
 
       setBackendConnected(false);
 
@@ -128,9 +179,9 @@ export function ScannerProvider({ children }) {
 
   }, []);
 
-  /* ============================
-     Spot Prices
-  ============================ */
+  /* ============================================================
+     Load Spot Prices
+  ============================================================ */
 
   const loadSpotPrices = useCallback(async () => {
 
@@ -138,52 +189,75 @@ export function ScannerProvider({ children }) {
 
       const response =
         await getSpotPrices([
-
           "NIFTY",
-
           "BANKNIFTY",
-
+          "FINNIFTY",
           "SENSEX",
-
         ]);
 
-      setSpotPrices(
+      if (response?.spotPrices) {
 
-        response.spotPrices || {}
+        setSpotPrices(
+          response.spotPrices
+        );
 
-      );
+      } else {
+
+        setSpotPrices({});
+
+      }
 
     } catch (err) {
 
-      console.error(err);
+      console.error(
+        "Spot price loading failed:",
+        err
+      );
+
+      setSpotPrices({});
 
     }
 
   }, []);
 
-  /* ============================
-     Scanner Data
-  ============================ */
+  /* ============================================================
+     Load Scanner Data
+  ============================================================ */
 
   const loadScanner = useCallback(async () => {
 
     try {
 
-      const symbols =
+      let symbols;
 
-        activeTab === "index"
+      switch (activeTab) {
 
-          ? [
+        case "index":
 
-              "NIFTY",
+          symbols = [
+            "NIFTY",
+            "BANKNIFTY",
+            "FINNIFTY",
+            "SENSEX",
+          ];
 
-              "BANKNIFTY",
+          break;
 
-              "SENSEX",
+        case "stock":
 
-            ]
+          symbols = undefined;
 
-          : [];
+          break;
+
+        case "all":
+
+        default:
+
+          symbols = undefined;
+
+          break;
+
+      }
 
       const response =
         await getOptions({
@@ -197,21 +271,40 @@ export function ScannerProvider({ children }) {
 
         });
 
-      setOptions(
+      if (response?.options) {
 
-        response.options || []
+        setOptions(
+          response.options
+        );
 
-      );
+      } else {
 
-      setExpiries(
+        setOptions([]);
 
-        response.expiries || []
+      }
 
-      );
+      if (response?.expiries) {
+
+        setExpiries(
+          response.expiries
+        );
+
+      } else {
+
+        setExpiries([]);
+
+      }
 
     } catch (err) {
 
-      console.error(err);
+      console.error(
+        "Scanner loading failed:",
+        err
+      );
+
+      setOptions([]);
+
+      setExpiries([]);
 
     }
 
@@ -222,9 +315,9 @@ export function ScannerProvider({ children }) {
     filters.expiry,
 
   ]);
-    /* ============================
+  /* ============================================================
      Refresh Everything
-  ============================ */
+  ============================================================ */
 
   const refreshAll = useCallback(async () => {
 
@@ -232,7 +325,9 @@ export function ScannerProvider({ children }) {
 
     refreshing.current = true;
 
-    setLoading(true);
+    if (!options.length) {
+      setLoading(true);
+    }
 
     setError("");
 
@@ -242,11 +337,9 @@ export function ScannerProvider({ children }) {
 
       if (!online) {
 
+        setBackendConnected(false);
+
         setError("Backend Offline");
-
-        setLoading(false);
-
-        refreshing.current = false;
 
         return;
 
@@ -260,13 +353,29 @@ export function ScannerProvider({ children }) {
 
       ]);
 
-      setLastRefresh(new Date());
+      const now = new Date();
+
+      setLastRefresh(now);
+
+      localStorage.setItem(
+
+        "lastRefresh",
+
+        now.toISOString()
+
+      );
 
     } catch (err) {
 
       console.error(err);
 
-      setError(err.message || "Unknown Error");
+      setError(
+
+        err.message ||
+
+        "Unknown Error"
+
+      );
 
     } finally {
 
@@ -284,11 +393,13 @@ export function ScannerProvider({ children }) {
 
     loadScanner,
 
+    options.length,
+
   ]);
 
-  /* ============================
-     Toggle Watchlist
-  ============================ */
+  /* ============================================================
+     Watchlist
+  ============================================================ */
 
   const toggleWatchlist = useCallback((contractId) => {
 
@@ -310,23 +421,15 @@ export function ScannerProvider({ children }) {
 
           ];
 
-      localStorage.setItem(
-
-        "watchlist",
-
-        JSON.stringify(updated)
-
-      );
-
       return updated;
 
     });
 
   }, []);
 
-  /* ============================
-     Save Watchlist
-  ============================ */
+  /* ============================================================
+     Persist Watchlist
+  ============================================================ */
 
   useEffect(() => {
 
@@ -340,9 +443,45 @@ export function ScannerProvider({ children }) {
 
   }, [watchlist]);
 
-  /* ============================
+  /* ============================================================
+     Persist Theme
+  ============================================================ */
+
+  useEffect(() => {
+
+    localStorage.setItem(
+
+      "theme",
+
+      theme
+
+    );
+
+    document.documentElement.dataset.theme =
+
+      theme;
+
+  }, [theme]);
+
+  /* ============================================================
+     Persist Refresh Interval
+  ============================================================ */
+
+  useEffect(() => {
+
+    localStorage.setItem(
+
+      "refreshInterval",
+
+      refreshInterval
+
+    );
+
+  }, [refreshInterval]);
+
+  /* ============================================================
      Initial Load
-  ============================ */
+  ============================================================ */
 
   useEffect(() => {
 
@@ -350,46 +489,51 @@ export function ScannerProvider({ children }) {
 
   }, [refreshAll]);
 
-  /* ============================
-     Refresh on Scanner Change
-  ============================ */
-
-  useEffect(() => {
-
-    refreshAll();
-
-  }, [
-
-    activeTab,
-
-    filters.expiry,
-
-  ]);
-
-  /* ============================
+  /* ============================================================
      Auto Refresh
-  ============================ */
+  ============================================================ */
 
   useEffect(() => {
 
     const timer = setInterval(() => {
 
-      refreshAll();
+      if (backendConnected) {
 
-    }, 10000);
+        refreshAll();
+
+      }
+
+    }, refreshInterval * 1000);
 
     return () => clearInterval(timer);
 
-  }, [refreshAll]);
-    /* ============================
+  }, [
+
+    refreshAll,
+
+    backendConnected,
+
+    refreshInterval,
+
+  ]);
+  /* ============================================================
+     Derived Values
+  ============================================================ */
+
+  const totalContracts = useMemo(
+    () => options.length,
+    [options]
+  );
+
+  /* ============================================================
      Context Value
-  ============================ */
+  ============================================================ */
 
   const value = {
 
-    /* ------------------------
+    /* ---------------------------------
        Scanner
-    ------------------------ */
+    --------------------------------- */
 
     options,
 
@@ -399,47 +543,61 @@ export function ScannerProvider({ children }) {
 
     setActiveTab,
 
-    /* ------------------------
+    totalContracts,
+
+    /* ---------------------------------
        Spot Prices
-    ------------------------ */
+    --------------------------------- */
 
     spotPrices,
 
-    /* ------------------------
+    /* ---------------------------------
        Filters
-    ------------------------ */
+    --------------------------------- */
 
     filters,
 
     setFilters,
 
-    /* ------------------------
+    /* ---------------------------------
        Loading
-    ------------------------ */
+    --------------------------------- */
 
     loading,
 
     error,
 
-    /* ------------------------
+    /* ---------------------------------
        Backend
-    ------------------------ */
+    --------------------------------- */
 
     backendConnected,
 
     lastRefresh,
 
-    /* ------------------------
+    /* ---------------------------------
+       Settings
+    --------------------------------- */
+
+    refreshInterval,
+
+    setRefreshInterval,
+
+    theme,
+
+    setTheme,
+
+    /* ---------------------------------
        Watchlist
-    ------------------------ */
+    --------------------------------- */
 
     watchlist,
 
     toggleWatchlist,
 
-    /* ------------------------
+    /* ---------------------------------
        Refresh
-    ------------------------ */
+    --------------------------------- */
 
     refreshAll,
 
@@ -448,6 +606,10 @@ export function ScannerProvider({ children }) {
     refreshSpotPrices: loadSpotPrices,
 
   };
+
+  /* ============================================================
+     Provider
+  ============================================================ */
 
   return (
 
@@ -462,7 +624,7 @@ export function ScannerProvider({ children }) {
 }
 
 /* ============================================================
-   Hook
+   useScanner Hook
 ============================================================ */
 
 export function useScanner() {
@@ -472,9 +634,7 @@ export function useScanner() {
   if (!context) {
 
     throw new Error(
-
       "useScanner must be used inside ScannerProvider"
-
     );
 
   }

@@ -1,14 +1,44 @@
-import { FiActivity, FiClock, FiDatabase, FiWifi } from "react-icons/fi";
+import {
+  FiActivity,
+  FiClock,
+  FiDatabase,
+  FiWifi,
+  FiWifiOff,
+} from "react-icons/fi";
+
+import { useMemo } from "react";
+
 import { useScanner } from "../context/ScannerContext";
 
 export default function StatusBar() {
+
   const {
+
     options,
-    marketMode,
+
+    activeTab,
+
+    backendConnected,
+
     loading,
+
+    lastRefresh,
+
   } = useScanner();
 
+  const refreshTime = useMemo(() => {
+
+    if (!lastRefresh)
+      return "--:--:--";
+
+    return new Date(
+      lastRefresh
+    ).toLocaleTimeString();
+
+  }, [lastRefresh]);
+
   return (
+
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900 px-6 py-3">
 
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -17,7 +47,15 @@ export default function StatusBar() {
 
         <div className="flex items-center gap-2">
 
-          <FiWifi className="text-green-400" />
+          {backendConnected ? (
+
+            <FiWifi className="text-green-400" />
+
+          ) : (
+
+            <FiWifiOff className="text-red-400" />
+
+          )}
 
           <span className="text-slate-400">
 
@@ -25,9 +63,17 @@ export default function StatusBar() {
 
           </span>
 
-          <span className="font-semibold text-green-400">
+          <span
+            className={
+              backendConnected
+                ? "font-semibold text-green-400"
+                : "font-semibold text-red-400"
+            }
+          >
 
-            Connected
+            {backendConnected
+              ? "Connected"
+              : "Offline"}
 
           </span>
 
@@ -45,9 +91,9 @@ export default function StatusBar() {
 
           </span>
 
-          <span className="font-semibold">
+          <span className="font-semibold capitalize">
 
-            {marketMode}
+            {activeTab}
 
           </span>
 
@@ -73,15 +119,15 @@ export default function StatusBar() {
 
         </div>
 
-        {/* Refresh */}
+        {/* Refresh Status */}
 
         <div className="flex items-center gap-2">
 
-          <FiClock className="text-green-400" />
+          <FiClock className="text-cyan-400" />
 
           <span className="text-slate-400">
 
-            Status
+            Last Refresh
 
           </span>
 
@@ -92,7 +138,11 @@ export default function StatusBar() {
                 : "text-green-400"
             }
           >
-            {loading ? "Refreshing..." : "Live"}
+
+            {loading
+              ? "Refreshing..."
+              : refreshTime}
+
           </span>
 
         </div>
@@ -100,5 +150,7 @@ export default function StatusBar() {
       </div>
 
     </div>
+
   );
+
 }

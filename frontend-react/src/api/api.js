@@ -1,132 +1,279 @@
 import axios from "axios";
 
-/*
-|--------------------------------------------------------------------------
-| Axios Instance
-|--------------------------------------------------------------------------
-*/
+/* ============================================================
+   Base URL
+============================================================ */
+
+const BASE_URL = (
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:8000/api"
+).replace(/\/$/, "");
+
+/* ============================================================
+   Axios Instance
+============================================================ */
 
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api",
-  timeout: 15000,
+  baseURL: BASE_URL,
+  timeout: 30000,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-/*
-|--------------------------------------------------------------------------
-| Request Logger
-|--------------------------------------------------------------------------
-*/
+/* ============================================================
+   Request Logger
+============================================================ */
 
 API.interceptors.request.use(
   (config) => {
+
     console.log(
       `[API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`
     );
+
     return config;
+
   },
   (error) => Promise.reject(error)
 );
 
-/*
-|--------------------------------------------------------------------------
-| Response Logger
-|--------------------------------------------------------------------------
-*/
+/* ============================================================
+   Response Logger
+============================================================ */
 
 API.interceptors.response.use(
+
   (response) => response,
+
   (error) => {
-    console.error(
-      "[API ERROR]",
-      error.response?.data || error.message
-    );
+
+    console.error({
+
+      url: error.config?.url,
+
+      method: error.config?.method,
+
+      status: error.response?.status,
+
+      data: error.response?.data,
+
+      message: error.message,
+
+    });
+
     return Promise.reject(error);
+
   }
+
 );
 
-/*
-|--------------------------------------------------------------------------
-| Health
-|--------------------------------------------------------------------------
-*/
+/* ============================================================
+   Health
+============================================================ */
 
 export async function pingBackend() {
+
   try {
+
     const { data } = await API.get("/health");
+
     return data;
+
   } catch {
+
     return {
+
       status: "offline",
+
+      success: false,
+
     };
+
   }
+
 }
 
-/*
-|--------------------------------------------------------------------------
-| Dashboard
-|--------------------------------------------------------------------------
-*/
+/* ============================================================
+   Dashboard
+============================================================ */
 
 export async function getDashboard() {
+
   const { data } = await API.get("/dashboard");
+
   return data;
+
 }
 
-/*
-|--------------------------------------------------------------------------
-| Spot Prices
-|--------------------------------------------------------------------------
-*/
+/* ============================================================
+   Spot Prices
+============================================================ */
 
 export async function getSpotPrices(symbols) {
-  const { data } = await API.post("/instruments/spot", {
-    symbols,
-  });
 
-  return data;
+  try {
+
+    const { data } = await API.post(
+      "/instruments/spot",
+      {
+        symbols,
+      }
+    );
+
+    return data ?? {
+      spotPrices: {},
+    };
+
+  } catch (err) {
+
+    console.error("Spot API Failed", err);
+
+    return {
+      spotPrices: {},
+    };
+
+  }
+
 }
 
-/*
-|--------------------------------------------------------------------------
-| Scanner
-|--------------------------------------------------------------------------
-*/
+/* ============================================================
+   Scanner
+============================================================ */
 
 export async function getOptions({
-  symbols = [],
-  expiry = null,
-  mode = "all",
-}) {
-  const { data } = await API.post(
-    "/instruments/options",
-    {
-      symbols,
-      expiry,
-      mode,
-    }
-  );
 
-  return data;
+  symbols,
+
+  expiry,
+
+  mode = "all",
+
+}) {
+
+  const payload = {
+    mode,
+  };
+
+  if (symbols && symbols.length) {
+    payload.symbols = symbols;
+  }
+
+  if (expiry) {
+    payload.expiry = expiry;
+  }
+
+  try {
+
+    const { data } = await API.post(
+      "/instruments/options",
+      payload
+    );
+
+    return data;
+
+  } catch (err) {
+
+    console.warn(
+      "Scanner API failed. Retrying..."
+    );
+
+    const { data } = await API.post(
+      "/instruments/options",
+      payload
+    );
+
+    return data;
+
+  }
+
 }
 
-/*
-|--------------------------------------------------------------------------
-| Average Volume
-|--------------------------------------------------------------------------
-*/
+/* ============================================================
+   Average Volume
+============================================================ */
 
 export async function getAverageVolume(symbols) {
+
+  try {
+
+    const { data } = await API.post(
+      "/instruments/avgvol",
+      {
+        symbols,
+      }
+    );
+
+    return data;
+
+  } catch {
+
+    return {};
+
+  }
+
+}
+
+/* ============================================================
+   Quote API
+============================================================ */
+
+export async function getQuote(payload) {
+
   const { data } = await API.post(
-    "/instruments/avgvol",
-    {
-      symbols,
-    }
+    "/market/quote",
+    payload
   );
 
   return data;
+
 }
+
+/* ============================================================
+   Debug Contract
+============================================================ */
+
+export async function debugContract(payload) {
+
+  const { data } = await API.post(
+    "/debug/contract",
+    payload
+  );
+
+  return data;
+
+}
+
+/* ============================================================
+   Manual Scanner Refresh
+============================================================ */
+
+export async function refreshScanner() {
+
+  const { data } = await API.post(
+    "/scanner/refresh"
+  );
+
+  return data;
+
+}
+
+/* ============================================================
+   Scanner API (Future)
+============================================================ */
+
+export async function getScanner() {
+
+  const { data } = await API.get(
+    "/scanner"
+  );
+
+  return data;
+
+}
+
+/* ============================================================
+   Default Export
+============================================================ */
 
 export default API;

@@ -7,12 +7,22 @@ import { ScannerProvider } from "./context/ScannerContext";
 
 import "./styles/globals.css";
 
-ReactDOM.createRoot(document.getElementById("root")).render(
+ReactDOM.createRoot(
+  document.getElementById("root")
+).render(
+
   <React.StrictMode>
-    <ScannerProvider>
-      <BrowserRouter>
+
+    <BrowserRouter>
+
+      <ScannerProvider>
+
         <App />
-      </BrowserRouter>
-    </ScannerProvider>
+
+      </ScannerProvider>
+
+    </BrowserRouter>
+
   </React.StrictMode>
+
 );

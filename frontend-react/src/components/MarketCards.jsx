@@ -17,23 +17,30 @@ export default function MarketCards() {
   } = useScanner();
 
   const cards = [
-    {
-      key: "NIFTY",
-      title: "NIFTY",
-    },
-    {
-      key: "BANKNIFTY",
-      title: "BANKNIFTY",
-    },
-    {
-      key: "SENSEX",
-      title: "SENSEX",
-    },
-  ];
-
+  {
+    key: "NIFTY",
+    title: "NIFTY",
+    color: "green",
+  },
+  {
+    key: "BANKNIFTY",
+    title: "BANKNIFTY",
+    color: "cyan",
+  },
+  {
+    key: "FINNIFTY",
+    title: "FINNIFTY",
+    color: "orange",
+  },
+  {
+    key: "SENSEX",
+    title: "SENSEX",
+    color: "purple",
+  },
+];
   const refreshTime = lastRefresh
-    ? new Date(lastRefresh).toLocaleTimeString()
-    : "--:--:--";
+  ? new Date(lastRefresh).toLocaleTimeString()
+  : "Never";
 
   return (
     <div className="space-y-4">
@@ -42,12 +49,12 @@ export default function MarketCards() {
           Index Cards
       ============================ */}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
 
         {cards.map((item) => {
 
           const value = spotPrices[item.key];
-
+        
           /*
           ----------------------------------------------------
           Supports BOTH backend formats
@@ -71,32 +78,35 @@ export default function MarketCards() {
           */
 
           const price =
-            typeof value === "number"
-              ? value
-              : value?.ltp ??
-                value?.price ??
-                0;
-
-          const change =
-            typeof value === "number"
-              ? 0
-              : value?.change ??
-                0;
-
-          const percent =
-            typeof value === "number"
-              ? 0
-              : value?.changePercent ??
-                value?.percent ??
-                0;
-
-          const positive = change >= 0;
+            Number(
+              typeof value === "number"
+                ? value
+                : value?.ltp ??
+                  value?.price ??
+                  0
+            ) || 0;
+            
+          const change = Number(
+              typeof value === "number"
+                ? 0
+                : value?.change ?? 0
+          ) || 0;
+            
+          const percent = Number(
+              typeof value === "number"
+                ? 0
+                : value?.changePercent ??
+                  value?.percent ??
+                  0
+          ) || 0;
+            
+          const positive = Number(change) >= 0;
 
           return (
 
             <div
               key={item.key}
-              className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-lg"
+              className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-lg transition-all duration-300 hover:scale-[1.02]"
             >
 
               <div className="flex items-center justify-between">
@@ -108,12 +118,12 @@ export default function MarketCards() {
                   </p>
 
                   <h2 className="mt-2 text-3xl font-bold text-white">
-
-                    {Number(price).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-
+                    {backendConnected
+                      ? price.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })
+                      : "--"}
                   </h2>
 
                 </div>
@@ -143,8 +153,9 @@ export default function MarketCards() {
                       : "text-red-400"
                   }`}
                 >
-                  {positive ? "+" : ""}
-                  {Number(change).toFixed(2)}
+                  {backendConnected
+                    ? `${positive ? "+" : ""}${change.toFixed(2)}`
+                    : "--"}
                 </span>
 
                 <span
@@ -155,9 +166,9 @@ export default function MarketCards() {
                   }`}
                 >
                   (
-                  {positive ? "+" : ""}
-                  {Number(percent).toFixed(2)}
-                  %)
+                  {backendConnected
+                    ? `(${positive ? "+" : ""}${percent.toFixed(2)}%)`
+                    : "--"}
                 </span>
 
               </div>
@@ -197,17 +208,15 @@ export default function MarketCards() {
                 Backend
               </p>
 
-              <h3
-                className={`font-semibold ${
+              <span
+                className={`rounded-full px-3 py-1 text-sm font-semibold ${
                   backendConnected
-                    ? "text-green-400"
-                    : "text-red-400"
+                    ? "bg-green-900 text-green-400"
+                    : "bg-red-900 text-red-400"
                 }`}
               >
-                {backendConnected
-                  ? "Connected"
-                  : "Offline"}
-              </h3>
+                {backendConnected ? "Connected" : "Offline"}
+              </span>
 
             </div>
 

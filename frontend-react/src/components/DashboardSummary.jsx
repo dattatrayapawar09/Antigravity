@@ -77,7 +77,7 @@ export default function DashboardSummary() {
 
   return (
 
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
 
       <StatCard
         title="Contracts"
@@ -120,7 +120,12 @@ export default function DashboardSummary() {
         icon={<FiBarChart2 />}
         color="cyan"
       />
-
+      <StatCard
+        title="Highest Smart"
+        value={stats.highestSmartScore}
+        icon={<FiActivity />}
+        color="purple"
+      />
       <StatCard
         title="Backend"
         value={backendConnected ? "Online" : "Offline"}
