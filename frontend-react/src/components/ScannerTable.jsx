@@ -255,22 +255,37 @@ export default function ScannerTable({ data = [] }) {
     smartScore >= 80
       ? "text-green-400"
       : smartScore >= 60
-      ? "text-c
-              <td className="text-center">
-                <button
-                  onClick={() => toggleWatchlist(id)}
-                  className="transition hover:scale-110"
-                >
-                  <FiStar
-                    size={18}
-                    className={
-                      favourite
-                        ? "fill-yellow-400 text-yellow-400"
-                        : "text-slate-500 hover:text-yellow-400"
-                    }
-                  />
-                </button>
-              </td>
+      ? "text-cyan-400"
+      : smartScore >= 40
+      ? "text-yellow-400"
+      : "text-red-400";
+
+  return (
+
+    <tr
+      key={id}
+      className="border-b border-slate-800 transition hover:bg-slate-900"
+    >
+
+      <td className="text-center">
+
+        <button
+          onClick={() => toggleWatchlist(id)}
+          className="transition hover:scale-110"
+        >
+
+          <FiStar
+            size={18}
+            className={
+              favourite
+                ? "fill-yellow-400 text-yellow-400"
+                : "text-slate-500 hover:text-yellow-400"
+            }
+          />
+
+        </button>
+
+      </td>
 
               <td className="text-center font-semibold">
                 {row.rank}

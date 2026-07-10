@@ -259,4 +259,31 @@ export default function Filters({
 
         <button
           onClick={resetFilters}
-          className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800
+          className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800"
+        >
+          <FiRotateCcw />
+
+          Reset
+
+        </button>
+
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 font-medium text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <FiRefreshCw
+            className={loading ? "animate-spin" : ""}
+          />
+
+          {loading ? "Refreshing..." : "Refresh"}
+
+        </button>
+
+      </div>
+
+    </div>
+
+  );
+
+}
