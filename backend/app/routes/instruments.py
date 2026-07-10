@@ -99,7 +99,19 @@ async def spot_prices(body: SymbolsRequest) -> SpotPricesResponse:
 @router.post("/options", response_model=OptionsResponse)
 async def options_chain(body: OptionsRequest) -> OptionsResponse:
     client  = get_client()
-    symbols = body.symbols
+    symbols = body.symbols or []
+    from app.scanner_config import INDEX_SYMBOLS, TOP_50_STOCKS
+
+    if not symbols:
+
+        if body.mode.value == "index":
+            symbols = INDEX_SYMBOLS
+
+        elif body.mode.value == "stock":
+            symbols = TOP_50_STOCKS
+
+        else:
+            symbols = INDEX_SYMBOLS + TOP_50_STOCKS
     expiry  = body.expiry
 
     if not client.is_token_valid():
@@ -164,7 +176,24 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             logger.warning("[Options] %s: spot=0, skipping option chain", sym)
             continue
 
-        mapping = IU.generate_option_chain_mapping(sym, expiry, spot, 10)
+        from app.scanner_config import (
+            INDEX_STRIKE_RANGE,
+            STOCK_STRIKE_RANGE,
+            INDEX_SYMBOLS,
+        )
+
+        num_strikes = (
+            INDEX_STRIKE_RANGE
+            if sym in INDEX_SYMBOLS
+            else STOCK_STRIKE_RANGE
+        )
+
+        mapping = IU.generate_option_chain_mapping(
+            sym,
+            expiry,
+            spot,
+            num_strikes,
+        )
         if "error" in mapping:
             logger.warning("[Options] mapping error for %s: %s", sym, mapping["error"])
             continue
@@ -261,8 +290,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             f"{contract['strike']}_"
             f"{contract['type']}"
         )
-        print(q)
-        logger.info(q)
+        logger.debug("[QUOTE] %s", q)
         history = history_map.get(contract_id, [])
         
         historicalVolumes = [
@@ -317,12 +345,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             else 0
         )
         
-        previousSessionOi = (
-            history[-1]["oi"]
-            if history
-            else max(1, int(oi * 0.90))
-        )
-        
+             
         prevPrice = (
             history[-2]["close"]
             if len(history) >= 2

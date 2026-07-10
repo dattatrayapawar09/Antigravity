@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 # ── Request models ─────────────────────────────────────────────────────────────
 
 class SymbolsRequest(BaseModel):
+    from pydantic import Field
+
     symbols: list[str] = Field(default_factory=list)
 
 
