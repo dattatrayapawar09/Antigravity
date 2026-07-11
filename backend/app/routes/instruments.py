@@ -107,7 +107,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         if body.mode.value == "index":
             symbols = INDEX_SYMBOLS
 
-        elif body.mode.value == "stock":
+        elif body.mode.value == "stocks":
             symbols = TOP_50_STOCKS
 
         else:
@@ -187,7 +187,12 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             if sym in INDEX_SYMBOLS
             else STOCK_STRIKE_RANGE
         )
+        import json
 
+        logger.info(
+            "[RAW OPTION QUOTE]\n%s",
+            json.dumps(q, indent=2, default=str)
+        )
         mapping = IU.generate_option_chain_mapping(
             sym,
             expiry,
@@ -273,18 +278,85 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 contract.get("underlying"), contract.get("strike"),
                 contract.get("type"), contract.get("token"),
             )
-        logger.info("[RAW OPTION QUOTE] %s", q)
+        import json
+
+        logger.info(
+            "[RAW OPTION QUOTE]\n%s",
+            json.dumps(q, indent=2, default=str)
+        )
                    
-        price = float(q.get("ltp") or 0) if q else 0.0
-        
-        prev_price = float(q.get("close") or price) if q else price
-        
-        oi = int(q.get("opnInterest") or 0) if q else 0
-        
-        volume = int(q.get("volume") or 0) if q else 0
-        
-        iv = float(q.get("impliedVol") or 0) if q else 0.0
-        
+        # ============================================================
+        # Live Quote Values (Robust Mapping)
+        # ============================================================
+        logger.info(
+            "[QUOTE KEYS] %s",
+            list(q.keys()) if q else []
+        )
+        # LTP
+        price = float(
+            q.get("ltp")
+            or q.get("lastPrice")
+            or q.get("lastTradedPrice")
+            or 0
+        )
+
+        # Open Interest
+        oi = int(
+            q.get("opnInterest")
+            or q.get("openInterest")
+            or q.get("open_interest")
+            or 0
+        )
+
+        # Today's Traded Volume
+        volume = int(
+            q.get("volume")
+            or q.get("tradeVolume")
+            or q.get("volumeTradedToday")
+            or q.get("totalTradedVolume")
+            or q.get("tradedVolume")
+            or q.get("totalVolume")
+            or 0
+        )
+
+        # Implied Volatility
+        iv = float(
+            q.get("impliedVol")
+            or q.get("impliedVolatility")
+            or q.get("iv")
+            or 0
+        )
+
+        # Best Bid
+        bid = float(
+            q.get("bestBidPrice")
+            or q.get("bidPrice")
+            or q.get("bestBid")
+            or 0
+        )
+
+        # Best Ask
+        ask = float(
+            q.get("bestAskPrice")
+            or q.get("askPrice")
+            or q.get("bestAsk")
+            or 0
+        )
+        logger.info(
+            "[OPTION VALUES] "
+            "LTP=%s "
+            "OI=%s "
+            "VOL=%s "
+            "IV=%s "
+            "BID=%s "
+            "ASK=%s",
+            price,
+            oi,
+            volume,
+            iv,
+            bid,
+            ask,
+        )
         contract_id = (
             f"{contract['underlying']}_"
             f"{contract['strike']}_"
@@ -298,16 +370,20 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             for h in history
         ]
         
-        previous_history = history[:-1] if len(history) >= 2 else []
+        # ---------------------------------------
+        # Average Volume (Last 5 Trading Sessions)
+        # ---------------------------------------
+
+        history_for_avg = history[-5:] if history else []
 
         avgVol = (
-            int(sum(h["volume"] for h in previous_history) / len(previous_history))
-            if previous_history
+            int(
+                sum(int(h.get("volume", 0)) for h in history_for_avg)
+                / len(history_for_avg)
+            )
+            if history_for_avg
             else 0
         )
-
-        if avgVol <= 0:
-            avgVol = 0
 
         volumeRatio = (
             round(volume / avgVol, 2)
@@ -315,6 +391,13 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             else 0
         )
         
+        logger.info(
+            "[VOLUME CHECK] Current=%s Avg=%s Ratio=%s HistoryDays=%s",
+            volume,
+            avgVol,
+            volumeRatio,
+            len(history_for_avg),
+        )
         # ---------------------------------------
         # OI Change
         # ---------------------------------------
