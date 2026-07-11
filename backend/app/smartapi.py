@@ -325,10 +325,9 @@ class SmartAPIClient:
             data = response.json()
             import json
 
-            logger.info(
-                "[SmartAPI Quote Response]\n%s",
-                json.dumps(data, indent=2)
-            )
+            logger.info("Status=%s", data.get("status"))
+            logger.info("Message=%s", data.get("message"))
+            logger.info("Data=%s", data.get("data"))
             return data.get("data")
 
         except Exception as e:

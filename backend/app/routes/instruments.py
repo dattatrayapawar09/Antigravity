@@ -187,6 +187,8 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             if sym in INDEX_SYMBOLS
             else STOCK_STRIKE_RANGE
         )
+        
+        q = quote_response
         import json
 
         logger.info(
@@ -210,7 +212,21 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             "[Options] %s | spot=%.2f | ATM=%.2f | expiry=%s | contracts=%d",
             sym, spot, mapping["atmStrike"], mapping["expiry"], len(mapping["chain"]),
         )
-
+        logger.info(
+            "[OPTION VALUES] "
+            "LTP=%s "
+            "OI=%s "
+            "VOL=%s "
+            "IV=%s "
+            "BID=%s "
+            "ASK=%s",
+            price,
+            oi,
+            volume,
+            iv,
+            bid,
+            ask,
+        )
         for contract in mapping["chain"]:
             instr_obj = {
                 "exchange":    contract["exch_seg"],
