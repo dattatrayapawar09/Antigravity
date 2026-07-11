@@ -304,7 +304,7 @@ class SmartAPIClient:
 
                 response = await client.post(
 
-                    f"{_ANGEL_BASE}/rest/secure/angelbroking/market/v1/quote/",
+                    f"{_ANGEL_BASE}/rest/secure/angelbroking/market/v1/quote",
 
                     json={
 
@@ -325,10 +325,35 @@ class SmartAPIClient:
             data = response.json()
             import json
 
+            logger.info("=" * 80)
+            logger.info("FULL QUOTE RESPONSE")
+            logger.info(json.dumps(data, indent=2, default=str))
+            logger.info("=" * 80)
+            import json
+
+            logger.info(
+                "FULL QUOTE RESPONSE:\n%s",
+                json.dumps(data, indent=2, default=str)
+            )
+            import json
+
             logger.info("Status=%s", data.get("status"))
             logger.info("Message=%s", data.get("message"))
-            logger.info("Data=%s", data.get("data"))
-            return data.get("data")
+
+            quote_data = data.get("data", {})
+
+            logger.info("=" * 80)
+            logger.info("QUOTE DATA TYPE = %s", type(quote_data))
+            logger.info("QUOTE DATA = %s", quote_data)
+            logger.info("=" * 80)
+
+            if quote_data.get("fetched"):
+                logger.info(
+                    "Sample Quote = %s",
+                    quote_data["fetched"][0]
+                )
+
+            return quote_data
 
         except Exception as e:
 

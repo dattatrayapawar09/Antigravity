@@ -225,7 +225,15 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             "[Options] Fetching quotes for %d contracts...",
             len(option_tokens_to_fetch),
         )
-        option_quotes = await _batch_quote(option_tokens_to_fetch, "FULL") or {}
+        option_quotes = await _batch_quote(option_tokens_to_fetch, "OHLC") or {}
+        logger.info(
+            "OPTION QUOTES RECEIVED = %d",
+            len(option_quotes)
+        )
+        logger.info(
+            "ALL OPTIONS CREATED = %d",
+            len(all_options)
+        )
         logger.info(
             "[Options] Received quotes for %d tokens", len(option_quotes)
         )
