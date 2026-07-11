@@ -270,11 +270,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             "[RAW OPTION QUOTE]\n%s",
             json.dumps(q, indent=2, default=str)
         )
-
-        logger.info(
-            "[QUOTE KEYS] %s",
-            list(q.keys())
-        )
+        
         if q:
             ltp = float(q.get("ltp") or 0)
             logger.debug(
@@ -424,8 +420,8 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         )
                 
         priceMomentum = (
-            ((price - prev_price) / prev_price) * 100
-            if prev_price > 0
+            ((price - prevPrice) / prevPrice) * 100
+            if prevPrice > 0
             else 0
         )
         
@@ -449,9 +445,9 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         )
                      
         prevPrice = (
-            float(history[-2].get("close", prev_price))
+            float(history[-2].get("close", price))
             if len(history) >= 2
-            else prev_price
+            else price
         )
         # ---------------------------------------
         # Trading Signal
