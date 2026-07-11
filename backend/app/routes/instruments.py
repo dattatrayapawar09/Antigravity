@@ -188,13 +188,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             else STOCK_STRIKE_RANGE
         )
         
-        q = quote_response
-        import json
-
-        logger.info(
-            "[RAW OPTION QUOTE]\n%s",
-            json.dumps(q, indent=2, default=str)
-        )
+        
         mapping = IU.generate_option_chain_mapping(
             sym,
             expiry,
@@ -212,21 +206,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             "[Options] %s | spot=%.2f | ATM=%.2f | expiry=%s | contracts=%d",
             sym, spot, mapping["atmStrike"], mapping["expiry"], len(mapping["chain"]),
         )
-        logger.info(
-            "[OPTION VALUES] "
-            "LTP=%s "
-            "OI=%s "
-            "VOL=%s "
-            "IV=%s "
-            "BID=%s "
-            "ASK=%s",
-            price,
-            oi,
-            volume,
-            iv,
-            bid,
-            ask,
-        )
+        
         for contract in mapping["chain"]:
             instr_obj = {
                 "exchange":    contract["exch_seg"],
@@ -277,7 +257,24 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
        
         if not contract:
             continue
+        if not q:
+            logger.warning(
+                "No quote for %s",
+                contract["token"]
+            )
+            continue
 
+        import json
+
+        logger.info(
+            "[RAW OPTION QUOTE]\n%s",
+            json.dumps(q, indent=2, default=str)
+        )
+
+        logger.info(
+            "[QUOTE KEYS] %s",
+            list(q.keys())
+        )
         if q:
             ltp = float(q.get("ltp") or 0)
             logger.debug(
@@ -294,13 +291,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 contract.get("underlying"), contract.get("strike"),
                 contract.get("type"), contract.get("token"),
             )
-        import json
-
-        logger.info(
-            "[RAW OPTION QUOTE]\n%s",
-            json.dumps(q, indent=2, default=str)
-        )
-                   
+                           
         # ============================================================
         # Live Quote Values (Robust Mapping)
         # ============================================================
@@ -419,38 +410,68 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         # ---------------------------------------
         
         previousSessionOi = (
-            history[-2]["oi"]
+            int(history[-2].get("oi", 0))
             if len(history) >= 2
             else 0
         )
-        
+
         oiChange = oi - previousSessionOi
+        
+        prevPrice = (
+            float(history[-2].get("close", price))
+            if len(history) >= 2
+            else price
+        )
+                
         priceMomentum = (
             ((price - prev_price) / prev_price) * 100
             if prev_price > 0
             else 0
         )
         
+        oiPercent = (
+            abs(oiChange) / previousSessionOi * 100
+            if previousSessionOi > 0
+            else 0
+        )
+
         smartScore = round(
             min(volumeRatio, 5) * 40
-            + min(abs(oiChange) / max(oi, 1), 1) * 30
+            + min(oiPercent, 100) * 0.30
             + min(abs(priceMomentum), 10) * 1.5
-            + min(iv, 100) * 0.1,
+            + min(iv, 100) * 0.10,
             2,
         )
         previousSessionVolume = (
-            history[-2]["volume"]
+            int(history[-2].get("volume", 0))
             if len(history) >= 2
             else 0
         )
-        
-             
+                     
         prevPrice = (
-            history[-2]["close"]
+            float(history[-2].get("close", prev_price))
             if len(history) >= 2
             else prev_price
         )
-        
+        # ---------------------------------------
+        # Trading Signal
+        # ---------------------------------------
+
+        if smartScore >= 80:
+            signal = "Strong Bullish"
+
+        elif smartScore >= 60:
+            signal = "Bullish"
+
+        elif smartScore <= 20:
+            signal = "Strong Bearish"
+
+        elif smartScore <= 40:
+            signal = "Bearish"
+
+        else:
+            signal = "Neutral"
+            
         all_options.append(
             OptionContract(
                 id=contract_id,
@@ -469,6 +490,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
                 avgVol=avgVol,
                 volumeRatio=volumeRatio,
                 smartScore=smartScore,
+                signal=signal,
                 historicalVolumes=historicalVolumes,
                 previousSessionVolume=previousSessionVolume,
         
@@ -479,15 +501,9 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         
                 iv=iv,
         
-                bid=float(q.get("bestBidPrice", 0) if q else 0),
-
-                ask=float(q.get("bestAskPrice", 0) if q else 0),
-                
-                spread=max(
-                    0,
-                    float(q.get("bestAskPrice", 0) if q else 0)
-                    - float(q.get("bestBidPrice", 0) if q else 0)
-                ),               
+                bid=bid,
+                ask=ask,
+                spread=max(0, ask - bid),               
             )
         )
     

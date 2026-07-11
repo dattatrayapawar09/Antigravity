@@ -137,7 +137,7 @@ class OptionContract(BaseModel):
     smartScore: float = 0
 
     signal: str = "Neutral"
-
+    
     rank: int = 0
 
     # ---------------------------------------
