@@ -54,9 +54,15 @@ async def _batch_quote(
                     results[tok] = q
 
             logger.info(
-                "[Quote] Batch %d → %d/%d",
-                i // _BATCH_SIZE + 1, len(fetched), len(batch),
+                "Fetched=%d",
+                len(fetched)
             )
+
+            if fetched:
+                logger.info(
+                    "First Quote=%s",
+                    fetched[0]
+                )
         except Exception as exc:
             logger.error("[Quote] Batch fetch error: %s", exc)
 
@@ -225,18 +231,17 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             "[Options] Fetching quotes for %d contracts...",
             len(option_tokens_to_fetch),
         )
-        option_quotes = await _batch_quote(option_tokens_to_fetch, "OHLC") or {}
+        option_quotes = await _batch_quote(option_tokens_to_fetch, "FULL") or {}
         logger.info(
             "OPTION QUOTES RECEIVED = %d",
             len(option_quotes)
         )
+       
         logger.info(
-            "ALL OPTIONS CREATED = %d",
-            len(all_options)
+            "OPTION QUOTES RECEIVED = %d",
+            len(option_quotes)
         )
-        logger.info(
-            "[Options] Received quotes for %d tokens", len(option_quotes)
-        )
+        
 
     # ── Step 4: Assemble final option records ──────────────────────────────────
     # ----------------------------------------------------
@@ -262,7 +267,11 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         q        = option_quotes.get(key)
         
         contract = token_to_contract_map.get(key)
-       
+        if q is None:
+            logger.warning(
+                "TOKEN %s NOT FOUND IN OPTION QUOTES",
+                key
+            )
         if not contract:
             continue
         if not q:
