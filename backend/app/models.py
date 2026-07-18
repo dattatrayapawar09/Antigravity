@@ -27,7 +27,7 @@ class ScannerMode(str, Enum):
     ALL = "all"
     
 class OptionsRequest(BaseModel):
-    symbols: list[str]
+    symbols: list[str] = Field(default_factory=list)
     expiry: str | None = None
     mode: ScannerMode = ScannerMode.STOCKS
     
