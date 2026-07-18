@@ -323,35 +323,10 @@ class SmartAPIClient:
                 )
 
             data = response.json()
-            import json
-
-            logger.info("=" * 80)
-            logger.info("FULL QUOTE RESPONSE")
-            logger.info(json.dumps(data, indent=2, default=str))
-            logger.info("=" * 80)
-            import json
-
-            logger.info(
-                "FULL QUOTE RESPONSE:\n%s",
-                json.dumps(data, indent=2, default=str)
-            )
-            import json
-
-            logger.info("Status=%s", data.get("status"))
-            logger.info("Message=%s", data.get("message"))
 
             quote_data = data.get("data", {})
-
-            logger.info("=" * 80)
-            logger.info("QUOTE DATA TYPE = %s", type(quote_data))
-            logger.info("QUOTE DATA = %s", quote_data)
-            logger.info("=" * 80)
-
-            if quote_data.get("fetched"):
-                logger.info(
-                    "Sample Quote = %s",
-                    quote_data["fetched"][0]
-                )
+            fetched_count = len(quote_data.get("fetched", []))
+            logger.info("[Quote] batch fetched=%d status=%s", fetched_count, data.get("status"))
 
             return quote_data
 

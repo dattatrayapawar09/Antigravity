@@ -134,7 +134,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         ",".join(symbols), expiry or "auto",
     )
 
-    # ── Step 1: Fetch spot prices ──────────────────────────────────────────────
+    # ── Step 1: Fetch spot prices (single batched call) ───────────────────────
     spot_instruments = [t for t in (IU.get_cash_token(s) for s in symbols) if t]
     spot_quotes: dict[str, Any] = {}
     if spot_instruments:
@@ -144,32 +144,16 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     for sym in symbols:
         tok = IU.get_cash_token(sym)
         if not tok:
-            logger.warning("[Options] No cash token for %r — cannot fetch spot", sym)
             continue
 
         key = _token_key(tok["symboltoken"])
         q   = spot_quotes.get(key)
         ltp = float(q.get("ltp") or q.get("close") or 0) if q else 0.0
 
-        # Fallback: dedicated getLtpData for indices
-        if ltp == 0:
-            ltp_data = await client.get_ltp_data(
-                tok["exchange"], tok["tradingsymbol"], tok["symboltoken"]
-            )
-            if ltp_data and float(ltp_data.get("ltp", 0)) > 0:
-                ltp = float(ltp_data["ltp"])
-
+        # NOTE: No individual per-stock fallback calls — they are too slow.
+        # Stocks with no spot price are silently skipped.
         if ltp > 0:
             spot_prices_map[sym] = ltp
-            logger.info(
-                "[Options][SPOT] %s → token=%s exchange=%s LTP=%.2f",
-                sym, tok["symboltoken"], tok["exchange"], ltp,
-            )
-        else:
-            logger.warning(
-                "[Options][SPOT] %s → token=%s — no quote returned",
-                sym, tok["symboltoken"],
-            )
        
     # ── Step 2: Build option chains from scrip master ──────────────────────────
     option_tokens_to_fetch: list[dict[str, str]] = []
@@ -228,19 +212,11 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     option_quotes: dict[str, Any] = {}
     if option_tokens_to_fetch:
         logger.info(
-            "[Options] Fetching quotes for %d contracts...",
-            len(option_tokens_to_fetch),
+            "[Options] Fetching quotes for %d contracts in batches of %d...",
+            len(option_tokens_to_fetch), _BATCH_SIZE,
         )
         option_quotes = await _batch_quote(option_tokens_to_fetch, "FULL") or {}
-        logger.info(
-            "OPTION QUOTES RECEIVED = %d",
-            len(option_quotes)
-        )
-       
-        logger.info(
-            "OPTION QUOTES RECEIVED = %d",
-            len(option_quotes)
-        )
+        logger.info("[Options] Quotes received: %d", len(option_quotes))
         
 
     # ── Step 4: Assemble final option records ──────────────────────────────────
@@ -281,23 +257,8 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             )
             continue
 
-        import json
-
-        logger.info(
-            "[RAW OPTION QUOTE]\n%s",
-            json.dumps(q, indent=2, default=str)
-        )
-        
         if q:
-            ltp = float(q.get("ltp") or 0)
-            logger.debug(
-                "[Options][CONTRACT] %s | expiry=%s | strike=%s | type=%s"
-                " | token=%s | LTP=%.2f | OI=%s | Vol=%s",
-                contract.get("underlying"), contract.get("expiry"),
-                contract.get("strike"), contract.get("type"),
-                contract.get("token"), ltp,
-                q.get("opnInterest", 0), q.get("volume", 0),
-            )
+            pass  # quote found
         else:
             logger.warning(
                 "[Options][MISS] %s %s %s token=%s — no quote",
@@ -308,10 +269,6 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         # ============================================================
         # Live Quote Values (Robust Mapping)
         # ============================================================
-        logger.info(
-            "[QUOTE KEYS] %s",
-            list(q.keys()) if q else []
-        )
         # LTP
         price = float(
             q.get("ltp")
@@ -362,27 +319,11 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             or q.get("bestAsk")
             or 0
         )
-        logger.info(
-            "[OPTION VALUES] "
-            "LTP=%s "
-            "OI=%s "
-            "VOL=%s "
-            "IV=%s "
-            "BID=%s "
-            "ASK=%s",
-            price,
-            oi,
-            volume,
-            iv,
-            bid,
-            ask,
-        )
         contract_id = (
             f"{contract['underlying']}_"
             f"{contract['strike']}_"
             f"{contract['type']}"
         )
-        logger.debug("[QUOTE] %s", q)
         history = history_map.get(contract_id, [])
         
         historicalVolumes = [
@@ -411,13 +352,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             else (1.0 if volume > 0 else 0)
         )
         
-        logger.info(
-            "[VOLUME CHECK] Current=%s Avg=%s Ratio=%s HistoryDays=%s",
-            volume,
-            avgVol,
-            volumeRatio,
-            len(history_for_avg),
-        )
+
         # ---------------------------------------
         # OI Change
         # ---------------------------------------
