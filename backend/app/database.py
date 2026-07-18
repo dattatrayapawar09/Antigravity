@@ -68,6 +68,15 @@ class HistoryDB:
 
         self.conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS sync_status(
+                key TEXT PRIMARY KEY,
+                last_sync_date TEXT
+            )
+            """
+        )
+
+        self.conn.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_contract
             ON option_history(contract_id)
             """
@@ -432,17 +441,24 @@ class HistoryDB:
         today = datetime.now().strftime("%Y-%m-%d")
         cur = self.conn.execute(
             """
-            SELECT EXISTS(
-                SELECT 1
-                FROM option_history
-                WHERE trading_date = ?
-                LIMIT 1
-            )
+            SELECT last_sync_date
+            FROM sync_status
+            WHERE key = 'history'
+            """
+        )
+        row = cur.fetchone()
+        return bool(row and row[0] == today)
+
+    def mark_history_downloaded_today(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO sync_status(key, last_sync_date)
+            VALUES('history', ?)
             """,
             (today,),
         )
-        row = cur.fetchone()
-        return bool(row[0]) if row else False
+        self.conn.commit()
 
     # ---------------------------------------------------------
     # Delete History

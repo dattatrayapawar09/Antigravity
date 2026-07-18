@@ -348,8 +348,9 @@ async def update_all_option_history():
                 len(contracts),
             )
 
+    history_db.mark_history_downloaded_today()
     logger.info(
-        "[History] Historical download completed."
+        "[History] Historical download completed and cached for today."
     )
 
 
