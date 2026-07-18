@@ -92,7 +92,7 @@ async def fetch_history(
                 to_date=to_date,
             )
 
-            if candles:
+            if candles is not None:
                 return candles
 
         except Exception as e:
