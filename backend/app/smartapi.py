@@ -299,7 +299,7 @@ class SmartAPIClient:
         try:
 
             async with httpx.AsyncClient(
-                timeout=8
+                timeout=15
             ) as client:
 
                 response = await client.post(

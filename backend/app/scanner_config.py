@@ -90,10 +90,11 @@ ALL_FNO_STOCKS = []
 # ---------------------------------------------------
 
 # Number of strikes on each side of ATM
-
+# 1 = fetch only ATM CE + ATM PE (fastest, 2 contracts per stock)
+# 2 = also fetch 1 strike above/below ATM (4 contracts per stock)
 INDEX_STRIKE_RANGE = 10
 
-STOCK_STRIKE_RANGE = 2
+STOCK_STRIKE_RANGE = 1   # Keep at 1 for speed — 180 stocks × 2 = 360 contracts = 8 batches
 
 TOP_RESULTS = 50
 

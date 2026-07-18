@@ -1,11 +1,11 @@
 """
 routes/instruments.py — Spot prices, options chain, and avgvol endpoints.
-
-Exact port of the Node /api/instruments/* routes.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter
@@ -18,7 +18,12 @@ from app.database import history_db
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/instruments", tags=["instruments"])
 
-_BATCH_SIZE = 50
+_BATCH_SIZE   = 50
+_MAX_PARALLEL = 5          # max concurrent Angel One API calls
+_CACHE_TTL    = 45         # seconds — options response TTL
+
+# ── In-memory response cache ──────────────────────────────────────────────────
+_options_cache: dict[str, dict[str, Any]] = {}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -31,41 +36,51 @@ async def _batch_quote(
     instruments: list[dict[str, str]], mode: str = "LTP"
 ) -> dict[str, Any]:
     """
-    Fetch quotes in batches of 50.
-    Returns {token_key: quote_dict}.
+    Fetch quotes for all instruments in parallel batches of _BATCH_SIZE.
+    A semaphore limits concurrent Angel One API calls to _MAX_PARALLEL
+    to avoid rate-limiting while still being much faster than sequential.
     """
-    client  = get_client()
+    if not instruments:
+        return {}
+
+    client   = get_client()
+    sem      = asyncio.Semaphore(_MAX_PARALLEL)
     results: dict[str, Any] = {}
 
-    for i in range(0, len(instruments), _BATCH_SIZE):
-        batch = instruments[i : i + _BATCH_SIZE]
-        try:
-            data = await client.get_quote(batch, mode)
-            if not data:
-                logger.warning("[Quote] Null response for batch %d", i // _BATCH_SIZE + 1)
-                continue
+    async def _fetch_one_batch(batch: list[dict[str, str]], idx: int) -> dict[str, Any]:
+        async with sem:
+            try:
+                data = await client.get_quote(batch, mode)
+                if not data:
+                    logger.warning("[Quote] Null response for batch %d", idx)
+                    return {}
+                out: dict[str, Any] = {}
+                for q in data.get("fetched", []):
+                    tok = _token_key(
+                        q.get("symbolToken") or q.get("symboltoken") or q.get("token", "")
+                    )
+                    if tok:
+                        out[tok] = q
+                return out
+            except Exception as exc:
+                logger.error("[Quote] Batch %d error: %s", idx, exc)
+                return {}
 
-            fetched: list[dict] = data.get("fetched", [])
-            for q in fetched:
-                tok = _token_key(
-                    q.get("symbolToken") or q.get("symboltoken") or q.get("token", "")
-                )
-                if tok:
-                    results[tok] = q
+    batches = [
+        instruments[i: i + _BATCH_SIZE]
+        for i in range(0, len(instruments), _BATCH_SIZE)
+    ]
+    logger.info("[Quote] %d instruments → %d batches (parallel, max %d)",
+                len(instruments), len(batches), _MAX_PARALLEL)
 
-            logger.info(
-                "Fetched=%d",
-                len(fetched)
-            )
+    batch_results = await asyncio.gather(
+        *[_fetch_one_batch(b, i) for i, b in enumerate(batches)]
+    )
 
-            if fetched:
-                logger.info(
-                    "First Quote=%s",
-                    fetched[0]
-                )
-        except Exception as exc:
-            logger.error("[Quote] Batch fetch error: %s", exc)
+    for br in batch_results:
+        results.update(br)
 
+    logger.info("[Quote] Total quotes received: %d", len(results))
     return results
 
 
@@ -129,10 +144,19 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         logger.warning("[Options] Scrip master not yet loaded — returning LOADING")
         return OptionsResponse(options=[], expiries=[], mode="LOADING")
 
-    logger.info(
-        "[Options] Request: symbols=%s expiry=%s",
-        ",".join(symbols), expiry or "auto",
-    )
+    # ── TTL Cache ─────────────────────────────────────────────────────────────
+    # Return cached response if it is still fresh (within _CACHE_TTL seconds).
+    # This makes repeat refreshes near-instant for the same mode+expiry.
+    cache_key = f"{body.mode.value}|{expiry or ''}"
+    cached = _options_cache.get(cache_key)
+    if cached and (time.time() - cached["ts"]) < _CACHE_TTL:
+        age = int(time.time() - cached["ts"])
+        logger.info("[Options] Cache HIT (key=%s, age=%ds)", cache_key, age)
+        return cached["data"]
+
+    t_start = time.time()
+    logger.info("[Options] Cache MISS — fetching live data (mode=%s expiry=%s)",
+                body.mode.value, expiry or "auto")
 
     # ── Step 1: Fetch spot prices (single batched call) ───────────────────────
     spot_instruments = [t for t in (IU.get_cash_token(s) for s in symbols) if t]
@@ -555,15 +579,19 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             option.rank = idx
         
         
-    return OptionsResponse(
-        
-            options=final_options,
-        
-            expiries=sorted_expiries,
-        
-            mode="LIVE",
-        
-        )   
+    response = OptionsResponse(
+        options=final_options,
+        expiries=sorted_expiries,
+        mode="LIVE",
+    )
+
+    # Store in cache for fast subsequent requests
+    _options_cache[cache_key] = {"ts": time.time(), "data": response}
+    elapsed = time.time() - t_start
+    logger.info("[Options] Done in %.1fs — %d contracts cached (key=%s, ttl=%ds)",
+                elapsed, len(final_options), cache_key, _CACHE_TTL)
+
+    return response
 
 # ── POST /api/instruments/avgvol ───────────────────────────────────────────────
 
