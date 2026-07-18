@@ -11,6 +11,7 @@ export default function IndexOptions() {
     options,
     expiries,
     refreshScanner,
+    loading,
     setActiveTab,
   } = useScanner();
 
@@ -20,23 +21,16 @@ export default function IndexOptions() {
     setActiveTab("index");
   }, [setActiveTab]);
 
-  useEffect(() => {
-    setFilteredOptions(options);
-  }, [options]);
-
   return (
     <div className="space-y-6">
 
       <div>
-
         <h1 className="text-3xl font-bold">
           📈 Index Options
         </h1>
-
         <p className="mt-1 text-slate-400">
           Current Weekly Expiry • Ranked by Smart Score
         </p>
-
       </div>
 
       <MarketCards />
@@ -46,11 +40,10 @@ export default function IndexOptions() {
         expiries={expiries}
         onFilterChange={setFilteredOptions}
         onRefresh={refreshScanner}
+        loading={loading}
       />
 
-      <ScannerTable
-        data={filteredOptions}
-      />
+      <ScannerTable data={filteredOptions} />
 
     </div>
   );

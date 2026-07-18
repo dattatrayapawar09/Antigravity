@@ -20,100 +20,52 @@ export default function Filters({
   const [volumeRatio, setVolumeRatio] = useState(0);
   const [oiChange, setOiChange] = useState(0);
 
+  // Run filtering whenever options or any filter state changes.
+  // onFilterChange is intentionally excluded from deps — it is a
+  // setState function that changes identity on every render and
+  // would cause an infinite loop if included.
   useEffect(() => {
     let filtered = [...options];
 
-    // -------------------------------
-    // Search
-    // -------------------------------
     if (search.trim()) {
       const keyword = search.trim().toLowerCase();
-
       filtered = filtered.filter((x) =>
-        (
-          `${x.symbol ?? ""} ${x.underlying ?? ""}`
-        )
-          .toLowerCase()
-          .includes(keyword)
+        `${x.symbol ?? ""} ${x.underlying ?? ""}`.toLowerCase().includes(keyword)
       );
     }
 
-    // -------------------------------
-    // Expiry
-    // -------------------------------
     if (expiry) {
       filtered = filtered.filter(
-        (x) =>
-          String(x.expiry).toUpperCase() ===
-          String(expiry).toUpperCase()
+        (x) => String(x.expiry).toUpperCase() === String(expiry).toUpperCase()
       );
     }
 
-    // -------------------------------
-    // CE / PE
-    // -------------------------------
     if (optionType !== "ALL") {
-      filtered = filtered.filter(
-        (x) => x.type === optionType
-      );
+      filtered = filtered.filter((x) => x.type === optionType);
     }
 
-    // -------------------------------
-    // Category
-    // -------------------------------
     if (category !== "ALL") {
-      filtered = filtered.filter(
-        (x) => x.category === category
-      );
+      filtered = filtered.filter((x) => x.category === category);
     }
 
-    // -------------------------------
-    // Volume Ratio
-    // -------------------------------
     filtered = filtered.filter(
-      (x) =>
-        Number(x.volumeRatio ?? 0) >=
-        Number(volumeRatio)
+      (x) => Number(x.volumeRatio ?? 0) >= Number(volumeRatio)
     );
 
-    // -------------------------------
-    // OI Change %
-    // -------------------------------
     if (oiChange > 0) {
       filtered = filtered.filter(
         (x) =>
-          Math.abs(
-            Number(
-              x.oiChangePercent ??
-                x.oiChgPct ??
-                0
-            )
-          ) >= oiChange
+          Math.abs(Number(x.oiChangePercent ?? x.oiChgPct ?? 0)) >= oiChange
       );
     }
 
-    // -------------------------------
-    // Signal
-    // -------------------------------
     if (signal !== "ALL") {
-      filtered = filtered.filter(
-        (x) => x.signal === signal
-      );
+      filtered = filtered.filter((x) => x.signal === signal);
     }
 
     onFilterChange(filtered);
-
-  }, [
-    options,
-    search,
-    expiry,
-    optionType,
-    category,
-    signal,
-    volumeRatio,
-    oiChange,
-    onFilterChange,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, search, expiry, optionType, category, signal, volumeRatio, oiChange]);
 
   const resetFilters = () => {
     setSearch("");
@@ -131,55 +83,33 @@ export default function Filters({
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-8">
 
         {/* Search */}
-
         <div className="relative xl:col-span-2">
-
-          <FiSearch
-            className="absolute left-3 top-3 text-slate-400"
-          />
-
+          <FiSearch className="absolute left-3 top-3 text-slate-400" />
           <input
             type="text"
             placeholder="Search Symbol..."
             value={search}
-            onChange={(e) =>
-              setSearch(e.target.value)
-            }
+            onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-10 pr-3 text-white focus:border-cyan-500 focus:outline-none"
           />
-
         </div>
 
         {/* Expiry */}
-
         <select
           value={expiry}
-          onChange={(e) =>
-            setExpiry(e.target.value)
-          }
+          onChange={(e) => setExpiry(e.target.value)}
           className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"
         >
-          <option value="">
-            All Expiry
-          </option>
-
+          <option value="">All Expiry</option>
           {expiries.map((exp) => (
-            <option
-              key={exp}
-              value={exp}
-            >
-              {exp}
-            </option>
+            <option key={exp} value={exp}>{exp}</option>
           ))}
         </select>
 
         {/* Option Type */}
-
         <select
           value={optionType}
-          onChange={(e) =>
-            setOptionType(e.target.value)
-          }
+          onChange={(e) => setOptionType(e.target.value)}
           className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"
         >
           <option value="ALL">ALL</option>
@@ -188,12 +118,9 @@ export default function Filters({
         </select>
 
         {/* Category */}
-
         <select
           value={category}
-          onChange={(e) =>
-            setCategory(e.target.value)
-          }
+          onChange={(e) => setCategory(e.target.value)}
           className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"
         >
           <option value="ALL">ALL</option>
@@ -202,12 +129,9 @@ export default function Filters({
         </select>
 
         {/* Volume Ratio */}
-
         <select
           value={volumeRatio}
-          onChange={(e) =>
-            setVolumeRatio(Number(e.target.value))
-          }
+          onChange={(e) => setVolumeRatio(Number(e.target.value))}
           className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"
         >
           <option value={0}>All Volume</option>
@@ -219,12 +143,9 @@ export default function Filters({
         </select>
 
         {/* OI Change */}
-
         <select
           value={oiChange}
-          onChange={(e) =>
-            setOiChange(Number(e.target.value))
-          }
+          onChange={(e) => setOiChange(Number(e.target.value))}
           className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"
         >
           <option value={0}>All OI</option>
@@ -236,12 +157,9 @@ export default function Filters({
         </select>
 
         {/* Signal */}
-
         <select
           value={signal}
-          onChange={(e) =>
-            setSignal(e.target.value)
-          }
+          onChange={(e) => setSignal(e.target.value)}
           className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"
         >
           <option value="ALL">All Signals</option>
@@ -255,17 +173,13 @@ export default function Filters({
       </div>
 
       {/* Action Buttons */}
-
       <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
-
         <button
           onClick={resetFilters}
-          className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800"
+          className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-white hover:bg-slate-700"
         >
           <FiRotateCcw />
-
           Reset
-
         </button>
 
         <button
@@ -273,18 +187,11 @@ export default function Filters({
           disabled={loading}
           className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 font-medium text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <FiRefreshCw
-            className={loading ? "animate-spin" : ""}
-          />
-
+          <FiRefreshCw className={loading ? "animate-spin" : ""} />
           {loading ? "Refreshing..." : "Refresh"}
-
         </button>
-
       </div>
 
     </div>
-
   );
-
 }

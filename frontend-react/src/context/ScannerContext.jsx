@@ -3,7 +3,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -30,153 +29,76 @@ export function ScannerProvider({ children }) {
      Active Scanner Tab
   ============================================================ */
 
-  const [activeTab, setActiveTab] =
-    useState("all");
+  const [activeTab, setActiveTab] = useState("all");
 
   /* ============================================================
      Market Data
   ============================================================ */
 
-  const [options, setOptions] =
-    useState([]);
-
-  const [spotPrices, setSpotPrices] =
-    useState({});
-
-  const [expiries, setExpiries] =
-    useState([]);
+  const [options, setOptions] = useState([]);
+  const [spotPrices, setSpotPrices] = useState({});
+  const [expiries, setExpiries] = useState([]);
 
   /* ============================================================
-     Filters
+     Loading / Status
   ============================================================ */
 
-  const [filters, setFilters] =
-    useState({
+  const [loading, setLoading] = useState(false);
+  const [backendConnected, setBackendConnected] = useState(false);
+  const [error, setError] = useState("");
 
-      expiry: "",
-
-      type: "ALL",
-
-      signal: "ALL",
-
-      search: "",
-
-      minRatio: 1,
-
-    });
-
-  /* ============================================================
-     Loading
-  ============================================================ */
-
-  const [loading, setLoading] =
-    useState(false);
-
-  const [backendConnected, setBackendConnected] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
-
-  const [lastRefresh, setLastRefresh] =
-    useState(() => {
-
-      const value =
-        localStorage.getItem("lastRefresh");
-
-      return value
-        ? new Date(value)
-        : null;
-
-    });
+  const [lastRefresh, setLastRefresh] = useState(() => {
+    const value = localStorage.getItem("lastRefresh");
+    return value ? new Date(value) : null;
+  });
 
   /* ============================================================
      Settings
   ============================================================ */
 
-  const [refreshInterval, setRefreshInterval] =
-    useState(() =>
+  const [refreshInterval, setRefreshInterval] = useState(() =>
+    Number(localStorage.getItem("refreshInterval") || 10)
+  );
 
-      Number(
-        localStorage.getItem(
-          "refreshInterval"
-        ) || 10
-      )
-
-    );
-
-  const [theme, setTheme] =
-    useState(() =>
-
-      localStorage.getItem("theme") ||
-      "dark"
-
-    );
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem("theme") || "dark"
+  );
 
   /* ============================================================
      Watchlist
   ============================================================ */
 
-  const [watchlist, setWatchlist] =
-    useState(() => {
-
-      try {
-
-        return JSON.parse(
-
-          localStorage.getItem(
-            "watchlist"
-          ) || "[]"
-
-        );
-
-      } catch {
-
-        return [];
-
-      }
-
-    });
+  const [watchlist, setWatchlist] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("watchlist") || "[]");
+    } catch {
+      return [];
+    }
+  });
 
   /* ============================================================
      Prevent Duplicate Refreshes
   ============================================================ */
 
-  const refreshing =
-    useRef(false);
+  const refreshing = useRef(false);
 
   /* ============================================================
      Backend Health Check
   ============================================================ */
 
   const checkBackend = useCallback(async () => {
-
     try {
-
       const result = await pingBackend();
-
       const online =
         result?.status === "ok" ||
         result?.status === "healthy" ||
         result?.success === true;
-
       setBackendConnected(online);
-
       return online;
-
-    } catch (err) {
-
-      console.error(
-        "Backend health check failed:",
-        err
-      );
-
+    } catch {
       setBackendConnected(false);
-
       return false;
-
     }
-
   }, []);
 
   /* ============================================================
@@ -184,443 +106,193 @@ export function ScannerProvider({ children }) {
   ============================================================ */
 
   const loadSpotPrices = useCallback(async () => {
-
     try {
-
-      const response =
-        await getSpotPrices([
-          "NIFTY",
-          "BANKNIFTY",
-          "FINNIFTY",
-          "SENSEX",
-        ]);
-
-      if (response?.spotPrices) {
-
-        setSpotPrices(
-          response.spotPrices
-        );
-
-      } else {
-
-        setSpotPrices({});
-
-      }
-
-    } catch (err) {
-
-      console.error(
-        "Spot price loading failed:",
-        err
-      );
-
+      const response = await getSpotPrices([
+        "NIFTY",
+        "BANKNIFTY",
+        "FINNIFTY",
+        "SENSEX",
+      ]);
+      setSpotPrices(response?.spotPrices ?? {});
+    } catch {
       setSpotPrices({});
-
     }
-
   }, []);
 
   /* ============================================================
-     Load Scanner Data
+     Load Scanner Data — accepts tab as argument to avoid stale closure
   ============================================================ */
 
-  const loadScanner = useCallback(async () => {
-
+  const loadScanner = useCallback(async (tab) => {
+    const resolvedTab = tab || activeTab;
     try {
-
       let symbols;
+      let mode = resolvedTab;
 
-      switch (activeTab) {
-
-        case "index":
-
-          symbols = [
-            "NIFTY",
-            "BANKNIFTY",
-            "FINNIFTY",
-            "SENSEX",
-          ];
-
-          break;
-
-        case "stock":
-
-          symbols = undefined;
-
-          break;
-
-        case "all":
-
-        default:
-
-          symbols = undefined;
-
-          break;
-
-      }
-
-      const response =
-        await getOptions({
-
-          symbols,
-
-          expiry:
-            filters.expiry || null,
-
-          mode: activeTab,
-
-        });
-
-      if (response?.options) {
-
-        setOptions(
-          response.options
-        );
-
+      if (resolvedTab === "index") {
+        symbols = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"];
+        mode = "index";
+      } else if (resolvedTab === "stocks") {
+        symbols = undefined;
+        mode = "stocks";
       } else {
-
-        setOptions([]);
-
+        symbols = undefined;
+        mode = "all";
       }
 
-      if (response?.expiries) {
+      const response = await getOptions({ symbols, mode });
 
-        setExpiries(
-          response.expiries
-        );
-
-      } else {
-
-        setExpiries([]);
-
-      }
-
+      setOptions(response?.options ?? []);
+      setExpiries(response?.expiries ?? []);
     } catch (err) {
-
-      console.error(
-        "Scanner loading failed:",
-        err
-      );
-
+      console.error("Scanner loading failed:", err);
       setOptions([]);
-
       setExpiries([]);
-
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);   // intentionally empty — tab is passed as argument
 
-  }, [
-
-    activeTab,
-
-    filters.expiry,
-
-  ]);
   /* ============================================================
-     Refresh Everything
+     Refresh All
   ============================================================ */
 
-  const refreshAll = useCallback(async () => {
-
+  const refreshAll = useCallback(async (tab) => {
     if (refreshing.current) return;
-
     refreshing.current = true;
 
-    if (!options.length) {
-      setLoading(true);
-    }
-
+    setLoading(true);
     setError("");
 
     try {
-
       const online = await checkBackend();
 
       if (!online) {
-
         setBackendConnected(false);
-
         setError("Backend Offline");
-
         return;
-
       }
 
       await Promise.all([
-
         loadSpotPrices(),
-
-        loadScanner(),
-
+        loadScanner(tab),
       ]);
 
       const now = new Date();
-
       setLastRefresh(now);
-
-      localStorage.setItem(
-
-        "lastRefresh",
-
-        now.toISOString()
-
-      );
-
+      localStorage.setItem("lastRefresh", now.toISOString());
     } catch (err) {
-
       console.error(err);
-
-      setError(
-
-        err.message ||
-
-        "Unknown Error"
-
-      );
-
+      setError(err.message || "Unknown Error");
     } finally {
-
       setLoading(false);
-
       refreshing.current = false;
-
     }
+  }, [checkBackend, loadSpotPrices, loadScanner]);
 
-  }, [
+  /* ============================================================
+     When activeTab changes — reload data for that tab
+  ============================================================ */
 
-    checkBackend,
+  useEffect(() => {
+    refreshAll(activeTab);
+  // We only want to re-run when the activeTab actually changes.
+  // refreshAll is stable (no deps that change), so this is safe.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
-    loadSpotPrices,
+  /* ============================================================
+     Auto Refresh (uses current tab via ref to avoid stale closure)
+  ============================================================ */
 
-    loadScanner,
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
-    options.length,
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (backendConnected && !refreshing.current) {
+        refreshAll(activeTabRef.current);
+      }
+    }, refreshInterval * 1000);
 
-  ]);
+    return () => clearInterval(timer);
+  }, [backendConnected, refreshInterval, refreshAll]);
 
   /* ============================================================
      Watchlist
   ============================================================ */
 
   const toggleWatchlist = useCallback((contractId) => {
-
-    setWatchlist((previous) => {
-
-      const updated = previous.includes(contractId)
-
-        ? previous.filter(
-
-            (id) => id !== contractId
-
-          )
-
-        : [
-
-            ...previous,
-
-            contractId,
-
-          ];
-
+    setWatchlist((prev) => {
+      const updated = prev.includes(contractId)
+        ? prev.filter((id) => id !== contractId)
+        : [...prev, contractId];
       return updated;
-
     });
-
   }, []);
 
   /* ============================================================
-     Persist Watchlist
+     Persist side-effects
   ============================================================ */
 
   useEffect(() => {
-
-    localStorage.setItem(
-
-      "watchlist",
-
-      JSON.stringify(watchlist)
-
-    );
-
+    localStorage.setItem("watchlist", JSON.stringify(watchlist));
   }, [watchlist]);
 
-  /* ============================================================
-     Persist Theme
-  ============================================================ */
-
   useEffect(() => {
-
-    localStorage.setItem(
-
-      "theme",
-
-      theme
-
-    );
-
-    document.documentElement.dataset.theme =
-
-      theme;
-
+    localStorage.setItem("theme", theme);
+    document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  /* ============================================================
-     Persist Refresh Interval
-  ============================================================ */
-
   useEffect(() => {
-
-    localStorage.setItem(
-
-      "refreshInterval",
-
-      refreshInterval
-
-    );
-
+    localStorage.setItem("refreshInterval", refreshInterval);
   }, [refreshInterval]);
-
-  /* ============================================================
-     Initial Load
-  ============================================================ */
-
-  useEffect(() => {
-
-    refreshAll();
-
-  }, [refreshAll]);
-
-  /* ============================================================
-     Auto Refresh
-  ============================================================ */
-
-  useEffect(() => {
-
-    const timer = setInterval(() => {
-
-      if (backendConnected) {
-
-        refreshAll();
-
-      }
-
-    }, refreshInterval * 1000);
-
-    return () => clearInterval(timer);
-
-  }, [
-
-    refreshAll,
-
-    backendConnected,
-
-    refreshInterval,
-
-  ]);
-  /* ============================================================
-     Derived Values
-  ============================================================ */
-
-  const totalContracts = useMemo(
-    () => options.length,
-    [options]
-  );
 
   /* ============================================================
      Context Value
   ============================================================ */
 
   const value = {
-
-    /* ---------------------------------
-       Scanner
-    --------------------------------- */
-
+    /* Scanner */
     options,
-
     expiries,
-
     activeTab,
-
     setActiveTab,
+    totalContracts: options.length,
 
-    totalContracts,
-
-    /* ---------------------------------
-       Spot Prices
-    --------------------------------- */
-
+    /* Spot Prices */
     spotPrices,
 
-    /* ---------------------------------
-       Filters
-    --------------------------------- */
-
-    filters,
-
-    setFilters,
-
-    /* ---------------------------------
-       Loading
-    --------------------------------- */
-
+    /* Loading */
     loading,
-
     error,
 
-    /* ---------------------------------
-       Backend
-    --------------------------------- */
-
+    /* Backend */
     backendConnected,
-
     lastRefresh,
 
-    /* ---------------------------------
-       Settings
-    --------------------------------- */
-
+    /* Settings */
     refreshInterval,
-
     setRefreshInterval,
-
     theme,
-
     setTheme,
 
-    /* ---------------------------------
-       Watchlist
-    --------------------------------- */
-
+    /* Watchlist */
     watchlist,
-
     toggleWatchlist,
 
-    /* ---------------------------------
-       Refresh
-    --------------------------------- */
-
-    refreshAll,
-
-    refreshScanner: loadScanner,
-
+    /* Refresh */
+    refreshAll: () => refreshAll(activeTabRef.current),
+    refreshScanner: () => loadScanner(activeTabRef.current),
     refreshSpotPrices: loadSpotPrices,
-
   };
 
-  /* ============================================================
-     Provider
-  ============================================================ */
-
   return (
-
     <ScannerContext.Provider value={value}>
-
       {children}
-
     </ScannerContext.Provider>
-
   );
-
 }
 
 /* ============================================================
@@ -628,17 +300,11 @@ export function ScannerProvider({ children }) {
 ============================================================ */
 
 export function useScanner() {
-
   const context = useContext(ScannerContext);
 
   if (!context) {
-
-    throw new Error(
-      "useScanner must be used inside ScannerProvider"
-    );
-
+    throw new Error("useScanner must be used inside ScannerProvider");
   }
 
   return context;
-
 }
