@@ -17,7 +17,7 @@ export default function Filters({
   const [optionType, setOptionType] = useState("ALL");
   const [category, setCategory] = useState("ALL");
   const [signal, setSignal] = useState("ALL");
-  const [volumeRatio, setVolumeRatio] = useState(1.5);
+  const [volumeRatio, setVolumeRatio] = useState(0);
   const [oiChange, setOiChange] = useState(0);
 
   useEffect(() => {
@@ -121,7 +121,7 @@ export default function Filters({
     setOptionType("ALL");
     setCategory("ALL");
     setSignal("ALL");
-    setVolumeRatio(1.5);
+    setVolumeRatio(0);
     setOiChange(0);
   };
 
@@ -210,6 +210,7 @@ export default function Filters({
           }
           className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"
         >
+          <option value={0}>All Volume</option>
           <option value={1}>1x+</option>
           <option value={1.5}>1.5x+</option>
           <option value={2}>2x+</option>

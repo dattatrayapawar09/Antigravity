@@ -408,7 +408,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         volumeRatio = (
             round(volume / avgVol, 2)
             if avgVol > 0
-            else 0
+            else (1.0 if volume > 0 else 0)
         )
         
         logger.info(
