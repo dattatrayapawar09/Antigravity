@@ -11,11 +11,13 @@ const BASE_URL = (
 
 /* ============================================================
    Axios Instance
+   - timeout: 120s because the /options endpoint fetches live
+     quotes for 180+ F&O stocks and can take 60-90 seconds.
 ============================================================ */
 
 const API = axios.create({
   baseURL: BASE_URL,
-  timeout: 30000,
+  timeout: 120000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -27,13 +29,10 @@ const API = axios.create({
 
 API.interceptors.request.use(
   (config) => {
-
     console.log(
       `[API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`
     );
-
     return config;
-
   },
   (error) => Promise.reject(error)
 );
@@ -47,23 +46,14 @@ API.interceptors.response.use(
   (response) => response,
 
   (error) => {
-
     console.error({
-
       url: error.config?.url,
-
       method: error.config?.method,
-
       status: error.response?.status,
-
       data: error.response?.data,
-
       message: error.message,
-
     });
-
     return Promise.reject(error);
-
   }
 
 );
@@ -73,25 +63,12 @@ API.interceptors.response.use(
 ============================================================ */
 
 export async function pingBackend() {
-
   try {
-
     const { data } = await API.get("/health");
-
     return data;
-
   } catch {
-
-    return {
-
-      status: "offline",
-
-      success: false,
-
-    };
-
+    return { status: "offline", success: false };
   }
-
 }
 
 /* ============================================================
@@ -99,11 +76,8 @@ export async function pingBackend() {
 ============================================================ */
 
 export async function getDashboard() {
-
   const { data } = await API.get("/dashboard");
-
   return data;
-
 }
 
 /* ============================================================
@@ -111,82 +85,47 @@ export async function getDashboard() {
 ============================================================ */
 
 export async function getSpotPrices(symbols) {
-
   try {
-
-    const { data } = await API.post(
-      "/instruments/spot",
-      {
-        symbols,
-      }
-    );
-
-    return data ?? {
-      spotPrices: {},
-    };
-
+    const { data } = await API.post("/instruments/spot", { symbols });
+    return data ?? { spotPrices: {} };
   } catch (err) {
-
     console.error("Spot API Failed", err);
-
-    return {
-      spotPrices: {},
-    };
-
+    return { spotPrices: {} };
   }
-
 }
 
 /* ============================================================
-   Scanner
+   Scanner — Options Chain
+   Uses a dedicated long-timeout instance since this call
+   fetches live market data for 180+ symbols and can take
+   60-90 seconds on the Render free tier.
 ============================================================ */
 
-export async function getOptions({
+const OPTIONS_API = axios.create({
+  baseURL: BASE_URL,
+  timeout: 120000,
+  headers: { "Content-Type": "application/json" },
+});
 
-  symbols,
-
-  expiry,
-
-  mode = "all",
-
-}) {
-
-  const payload = {
-    mode,
-  };
+export async function getOptions({ symbols, expiry, mode = "all" }) {
+  const payload = { mode };
 
   if (symbols && symbols.length) {
     payload.symbols = symbols;
   }
-
   if (expiry) {
     payload.expiry = expiry;
   }
 
   try {
-
-    const { data } = await API.post(
-      "/instruments/options",
-      payload
-    );
-
+    const { data } = await OPTIONS_API.post("/instruments/options", payload);
     return data;
-
   } catch (err) {
-
-    console.warn(
-      "Scanner API failed. Retrying..."
-    );
-
-    const { data } = await API.post(
-      "/instruments/options",
-      payload
-    );
-
-    return data;
-
+    console.error("Options API failed:", err?.message || err);
+    // Return empty structure so the UI shows "No Contracts" rather than
+    // crashing or entering an infinite retry loop.
+    return { options: [], expiries: [], mode: "ERROR" };
   }
-
 }
 
 /* ============================================================
@@ -194,24 +133,12 @@ export async function getOptions({
 ============================================================ */
 
 export async function getAverageVolume(symbols) {
-
   try {
-
-    const { data } = await API.post(
-      "/instruments/avgvol",
-      {
-        symbols,
-      }
-    );
-
+    const { data } = await API.post("/instruments/avgvol", { symbols });
     return data;
-
   } catch {
-
     return {};
-
   }
-
 }
 
 /* ============================================================
@@ -219,14 +146,8 @@ export async function getAverageVolume(symbols) {
 ============================================================ */
 
 export async function getQuote(payload) {
-
-  const { data } = await API.post(
-    "/market/quote",
-    payload
-  );
-
+  const { data } = await API.post("/market/quote", payload);
   return data;
-
 }
 
 /* ============================================================
@@ -234,14 +155,8 @@ export async function getQuote(payload) {
 ============================================================ */
 
 export async function debugContract(payload) {
-
-  const { data } = await API.post(
-    "/debug/contract",
-    payload
-  );
-
+  const { data } = await API.post("/debug/contract", payload);
   return data;
-
 }
 
 /* ============================================================
@@ -249,13 +164,8 @@ export async function debugContract(payload) {
 ============================================================ */
 
 export async function refreshScanner() {
-
-  const { data } = await API.post(
-    "/scanner/refresh"
-  );
-
+  const { data } = await API.post("/scanner/refresh");
   return data;
-
 }
 
 /* ============================================================
@@ -272,13 +182,8 @@ export async function getEquityVolumeSurge() {
 ============================================================ */
 
 export async function getScanner() {
-
-  const { data } = await API.get(
-    "/scanner"
-  );
-
+  const { data } = await API.get("/scanner");
   return data;
-
 }
 
 /* ============================================================
