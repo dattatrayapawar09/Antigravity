@@ -106,7 +106,7 @@ async def spot_prices(body: SymbolsRequest) -> SpotPricesResponse:
 async def options_chain(body: OptionsRequest) -> OptionsResponse:
     client  = get_client()
     symbols = body.symbols or []
-    from app.scanner_config import INDEX_SYMBOLS, TOP_50_STOCKS
+    from app.scanner_config import INDEX_SYMBOLS, ALL_FNO_STOCKS
 
     if not symbols:
 
@@ -114,10 +114,10 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             symbols = INDEX_SYMBOLS
 
         elif body.mode.value == "stocks":
-            symbols = TOP_50_STOCKS
+            symbols = ALL_FNO_STOCKS
 
         else:
-            symbols = INDEX_SYMBOLS + TOP_50_STOCKS
+            symbols = INDEX_SYMBOLS + ALL_FNO_STOCKS
     expiry  = body.expiry
 
     if not client.is_token_valid():

@@ -244,11 +244,11 @@ export default function Filters({
           className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"
         >
           <option value="ALL">All Signals</option>
-          <option value="BUY">BUY</option>
-          <option value="STRONG BUY">STRONG BUY</option>
-          <option value="SELL">SELL</option>
-          <option value="STRONG SELL">STRONG SELL</option>
-          <option value="NEUTRAL">NEUTRAL</option>
+          <option value="Strong Bullish">Strong Bullish</option>
+          <option value="Bullish">Bullish</option>
+          <option value="Neutral">Neutral</option>
+          <option value="Bearish">Bearish</option>
+          <option value="Strong Bearish">Strong Bearish</option>
         </select>
 
       </div>

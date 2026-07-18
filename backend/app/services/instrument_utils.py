@@ -360,7 +360,14 @@ async def fetch_and_cache_scrip_master() -> None:
         C.total_options_indexed += 1
 
     C.mark_loaded()
+
+    # Dynamically populate ALL_FNO_STOCKS from the Instrument Master
+    from app.scanner_config import ALL_FNO_STOCKS
+    ALL_FNO_STOCKS.clear()
+    ALL_FNO_STOCKS.extend(sorted(list({unresolve_symbol(u) for u in underlying_set if not is_index(u)})))
+
     u_count = len(underlying_set)
+
 
     logger.info("\n[InstrumentUtils] ✅ Indexing complete:")
     logger.info("   Options indexed   : %d", C.total_options_indexed)

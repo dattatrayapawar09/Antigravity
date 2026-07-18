@@ -429,9 +429,7 @@ class HistoryDB:
         return cur.fetchone() is not None
     
     def history_already_downloaded_today(self) -> bool:
-
         today = datetime.now().strftime("%Y-%m-%d")
-
         cur = self.conn.execute(
             """
             SELECT EXISTS(
@@ -443,6 +441,8 @@ class HistoryDB:
             """,
             (today,),
         )
+        row = cur.fetchone()
+        return bool(row[0]) if row else False
 
     # ---------------------------------------------------------
     # Delete History

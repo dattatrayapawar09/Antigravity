@@ -36,6 +36,10 @@ const AllScanner = lazy(() =>
   import("./pages/AllScanner")
 );
 
+const EquityVolumeSurge = lazy(() =>
+  import("./pages/EquityVolumeSurge")
+);
+
 const Watchlist = lazy(() =>
   import("./pages/Watchlist")
 );
@@ -101,6 +105,11 @@ function App() {
             <Route
               path="/scanner"
               element={<AllScanner />}
+            />
+
+            <Route
+              path="/equity-volume-surge"
+              element={<EquityVolumeSurge />}
             />
 
             <Route

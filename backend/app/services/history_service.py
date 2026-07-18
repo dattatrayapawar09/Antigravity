@@ -18,7 +18,7 @@ from app.smartapi import get_client
 from app.services import instrument_utils as IU
 from app.scanner_config import (
     INDEX_SYMBOLS,
-    TOP_50_STOCKS,
+    ALL_FNO_STOCKS,
     INDEX_STRIKE_RANGE,
     STOCK_STRIKE_RANGE,
 )
@@ -182,6 +182,44 @@ async def download_contract_history(contract: dict):
 
         # Prevent Angel One rate limiting
         await asyncio.sleep(REQUEST_DELAY)
+
+
+# ------------------------------------------------------------------
+# Download stock history (5 sessions)
+# ------------------------------------------------------------------
+
+async def download_stock_history(symbol: str):
+    """
+    Download daily history (5 sessions) for the cash stock itself.
+    """
+    async with semaphore:
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # Skip if already downloaded today
+        if history_db.already_updated(symbol, today):
+            logger.debug("[History] Stock already updated: %s", symbol)
+            return
+
+        logger.info("[History] Downloading stock history for %s", symbol)
+        cash = IU.get_cash_token(symbol)
+        if not cash:
+            logger.warning("[History] Cash token not found for stock: %s", symbol)
+            return
+
+        candles = await fetch_history(
+            exchange=cash["exchange"],
+            token=cash["symboltoken"]
+        )
+
+        if not candles:
+            logger.debug("[History] No stock history for %s", symbol)
+            return
+
+        save_history(symbol, candles)
+
+        # Prevent rate limiting
+        await asyncio.sleep(REQUEST_DELAY)
+
 # ------------------------------------------------------------------
 # Save candles into SQLite
 # ------------------------------------------------------------------
@@ -248,6 +286,15 @@ async def update_all_option_history():
         "[History] Starting historical download..."
     )
 
+    # 1. Download history for the cash stocks first
+    logger.info("[History] Downloading history for F&O stocks...")
+    for symbol in ALL_FNO_STOCKS:
+        try:
+            await download_stock_history(symbol)
+        except Exception as e:
+            logger.warning("[History] Failed downloading stock history for %s: %s", symbol, e)
+
+    # 2. Download options history
     contracts = await build_scanner_contracts()
 
     if not contracts:
@@ -348,7 +395,7 @@ async def build_scanner_contracts() -> list[dict]:
 
     contracts: list[dict] = []
 
-    symbols = INDEX_SYMBOLS + TOP_50_STOCKS
+    symbols = INDEX_SYMBOLS + ALL_FNO_STOCKS
 
     logger.info(
         "[History] Building scanner contracts..."

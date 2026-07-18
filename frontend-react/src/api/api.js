@@ -259,6 +259,15 @@ export async function refreshScanner() {
 }
 
 /* ============================================================
+   Equity Volume Surge
+============================================================ */
+
+export async function getEquityVolumeSurge() {
+  const { data } = await API.get("/equity/volume-surge");
+  return data;
+}
+
+/* ============================================================
    Scanner API (Future)
 ============================================================ */
 

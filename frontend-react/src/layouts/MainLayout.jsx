@@ -38,6 +38,11 @@ const menuItems = [
     icon: <FiTrendingUp size={18} />,
   },
   {
+    title: "Equity Volume Surge",
+    path: "/equity-volume-surge",
+    icon: <FiTrendingUp size={18} />,
+  },
+  {
     title: "Watchlist",
     path: "/watchlist",
     icon: <FiStar size={18} />,
