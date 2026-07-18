@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/api/instruments", tags=["instruments"])
 _BATCH_SIZE   = 50
 _MAX_PARALLEL = 5          # max concurrent Angel One API calls
 _CACHE_TTL    = 45         # seconds — options response TTL
+_CACHE_VER    = "v2"       # bump this to invalidate cached data on deploy
 
 # ── In-memory response cache ──────────────────────────────────────────────────
 _options_cache: dict[str, dict[str, Any]] = {}
@@ -147,7 +149,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
     # ── TTL Cache ─────────────────────────────────────────────────────────────
     # Return cached response if it is still fresh (within _CACHE_TTL seconds).
     # This makes repeat refreshes near-instant for the same mode+expiry.
-    cache_key = f"{body.mode.value}|{expiry or ''}"
+    cache_key = f"{_CACHE_VER}|{body.mode.value}|{expiry or ''}"
     cached = _options_cache.get(cache_key)
     if cached and (time.time() - cached["ts"]) < _CACHE_TTL:
         age = int(time.time() - cached["ts"])
@@ -230,6 +232,9 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             token_to_contract_map[_token_key(contract["token"])] = {
                 **contract,
                 "spotPrice": spot,
+                # lotsize is carried through so we can normalise live volume
+                # (quantity) to the same unit as historical candle volume (lots)
+                "lotsize": int(contract.get("lotsize") or 1),
             }
 
     # ── Step 3: Fetch real-time LTP/OI/Volume for options ─────────────────────
@@ -309,8 +314,8 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             or 0
         )
 
-        # Today's Traded Volume
-        volume = int(
+        # Today's Traded Volume (raw quantity from live quote API)
+        volume_qty = int(
             q.get("volume")
             or q.get("tradeVolume")
             or q.get("volumeTradedToday")
@@ -319,6 +324,17 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             or q.get("totalVolume")
             or 0
         )
+
+        # ── Unit Normalisation ────────────────────────────────────────────
+        # Angel One live quote API returns `volume` in QUANTITY (shares),
+        # while the historical candle API returns volume in LOTS.
+        # We must convert live volume → lots so both sides of the ratio
+        # are in the same unit and volumeRatio is meaningful.
+        #
+        #   volume_lots = volume_qty / lotsize
+        # ─────────────────────────────────────────────────────────────────
+        lot_size = max(int(contract.get("lotsize") or 1), 1)
+        volume = round(volume_qty / lot_size)   # now in LOTS (same unit as historical)
 
         # Implied Volatility
         iv = float(
@@ -349,17 +365,21 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             f"{contract['type']}"
         )
         history = history_map.get(contract_id, [])
-        
-        historicalVolumes = [
-            h["volume"]
-            for h in history
-        ]
-        
-        # ---------------------------------------
-        # Average Volume (Last 5 Trading Sessions)
-        # ---------------------------------------
 
-        history_for_avg = history[-5:] if history else []
+        # Historical volumes are already stored in LOTS (Angel One candle API unit)
+        # Exclude the LAST candle if it is today — today's historical candle is
+        # fetched at EOD and may be incomplete/zero intraday. Use only closed sessions.
+        closed_sessions = [
+            h for h in history
+            if h.get("trading_date", "") < datetime.utcnow().strftime("%Y-%m-%d")
+        ] or history  # fallback to all rows if date filter removes everything
+
+        historicalVolumes = [h["volume"] for h in closed_sessions]
+
+        # ---------------------------------------
+        # Average Volume — last 5 closed sessions, same unit as live (LOTS)
+        # ---------------------------------------
+        history_for_avg = closed_sessions[-5:] if closed_sessions else []
 
         avgVol = (
             int(
@@ -370,6 +390,7 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             else 0
         )
 
+        # volumeRatio: today's lots / avg historical lots — truly apples-to-apples
         volumeRatio = (
             round(volume / avgVol, 2)
             if avgVol > 0
@@ -378,20 +399,19 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
         
 
         # ---------------------------------------
-        # OI Change
+        # OI Change — compare vs previous closed session
         # ---------------------------------------
-        
         previousSessionOi = (
-            int(history[-2].get("oi", 0))
-            if len(history) >= 2
+            int(closed_sessions[-1].get("oi", 0))
+            if closed_sessions
             else 0
         )
 
         oiChange = oi - previousSessionOi
-        
+
         prevPrice = (
-            float(history[-2].get("close", price))
-            if len(history) >= 2
+            float(closed_sessions[-1].get("close", price))
+            if closed_sessions
             else price
         )
                 
@@ -415,19 +435,11 @@ async def options_chain(body: OptionsRequest) -> OptionsResponse:
             2,
         )
         previousSessionVolume = (
-            int(history[-2].get("volume", 0))
-            if len(history) >= 2
+            int(closed_sessions[-1].get("volume", 0))   # in LOTS
+            if closed_sessions
             else 0
         )
-                     
-        prevPrice = (
-            float(history[-2].get("close", price))
-            if len(history) >= 2
-            else price
-        )
-        # ---------------------------------------
         # Trading Signal
-        # ---------------------------------------
 
         if smartScore >= 80:
             signal = "Strong Bullish"
