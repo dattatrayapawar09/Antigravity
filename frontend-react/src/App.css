@@ -238,7 +238,6 @@
 /* ── Arrow caret ──────────────────────────────────────────── */
 .avt-arrow {
   position: absolute;
-  top: 18px;
   width: 0;
   height: 0;
 }

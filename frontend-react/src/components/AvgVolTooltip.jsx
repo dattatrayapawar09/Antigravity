@@ -139,21 +139,39 @@ export default function AvgVolTooltip({ row, children }) {
     const vpW = window.innerWidth;
     const vpH = window.innerHeight;
 
-    // Try to open to the LEFT of the cell (table is rightmost)
-    let left     = r.left - TIP_W - GAP;
+    // Horizontal positioning (prefer left, fallback right)
+    const spaceLeft = r.left;
+    const spaceRight = vpW - r.right;
+    
+    let left;
     let openLeft = true;
-    if (left < 8) {
-      left     = r.right + GAP;
-      openLeft = false;
-    }
-    // Clamp horizontally
-    left = Math.max(8, Math.min(left, vpW - TIP_W - 8));
 
-    // Vertically: align top of tooltip with top of the cell, clamp
-    let top = r.top;
+    if (spaceLeft >= TIP_W + GAP) {
+      left = r.left - TIP_W - GAP;
+      openLeft = true;
+    } else if (spaceRight >= TIP_W + GAP) {
+      left = r.right + GAP;
+      openLeft = false;
+    } else {
+      // Doesn't fit perfectly on either side. Place on side with more space,
+      // avoiding strict clamping that covers the text.
+      if (spaceLeft > spaceRight) {
+        left = Math.min(8, r.left - TIP_W - GAP); // pin to left edge but don't move right
+        openLeft = true;
+      } else {
+        left = Math.max(vpW - TIP_W - 8, r.right + GAP); // pin to right edge but don't move left
+        openLeft = false;
+      }
+    }
+
+    // Vertical positioning (center relative to trigger)
+    let top = r.top + (r.height / 2) - (TIP_H / 2);
     top = Math.max(8, Math.min(top, vpH - TIP_H - 8));
 
-    setPos({ top, left, openLeft });
+    // Calculate arrow position so it always points to the trigger's center
+    const arrowTop = r.top + (r.height / 2) - top;
+
+    setPos({ top, left, openLeft, arrowTop });
   }, [visible]);
 
   const avgVol = Number(row.avgVol ?? row.avgVolume ?? 0);
@@ -185,7 +203,10 @@ export default function AvgVolTooltip({ row, children }) {
           role="tooltip"
         >
           {/* Arrow */}
-          <div className={`avt-arrow avt-arrow--${pos.openLeft ? "right" : "left"}`} />
+          <div 
+            className={`avt-arrow avt-arrow--${pos.openLeft ? "right" : "left"}`} 
+            style={{ top: pos.arrowTop ? `${pos.arrowTop - 7}px` : '50%' }}
+          />
 
           {/* Title */}
           <div className="avt-title">Last 5 Trading Days</div>
