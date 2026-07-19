@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 /* ============================================================
    Seeded PRNG  (xorshift32 via djb2 hash)
@@ -175,7 +176,7 @@ export default function AvgVolTooltip({ row, children }) {
       </span>
 
       {/* ── Tooltip card ────────────────────────────────────── */}
-      {visible && (
+      {visible && createPortal(
         <div
           className="avt-card"
           style={{ top: pos.top, left: pos.left }}
@@ -213,7 +214,8 @@ export default function AvgVolTooltip({ row, children }) {
             <span className="avt-footer-label">Average</span>
             <span className="avt-footer-val">{fmtVol(avgVol)}</span>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
