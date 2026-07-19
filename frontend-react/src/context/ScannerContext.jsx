@@ -57,7 +57,7 @@ export function ScannerProvider({ children }) {
   ============================================================ */
 
   const [refreshInterval, setRefreshInterval] = useState(() =>
-    Number(localStorage.getItem("refreshInterval") || 10)
+    Number(localStorage.getItem("refreshInterval") || 5)
   );
 
   const [theme, setTheme] = useState(
@@ -214,7 +214,7 @@ export function ScannerProvider({ children }) {
       if (backendConnected && !refreshing.current) {
         refreshAll(activeTabRef.current);
       }
-    }, refreshInterval * 1000);
+    }, refreshInterval * 60 * 1000);
 
     return () => clearInterval(timer);
   }, [backendConnected, refreshInterval, refreshAll]);
