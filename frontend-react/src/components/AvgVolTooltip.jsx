@@ -104,13 +104,13 @@ function buildRows(row) {
    children  formatted average volume text already displayed
 ============================================================ */
 export default function AvgVolTooltip({ row, children }) {
-  const [visible, setVisible] = useState(false);
-  const [pos,     setPos    ] = useState({ top: 0, left: 0, openLeft: true });
+  // Single state object so pos + visible always update atomically
+  const [state, setState] = useState({ visible: false, top: 0, left: 0, openLeft: true, arrowTop: 0 });
 
   const triggerRef = useRef(null);
 
-  /* Calculate position synchronously to avoid top-left flash */
-  const updatePosition = useCallback(() => {
+  /* Calculate position and show the tooltip – all in one setState call */
+  const showTooltip = useCallback(() => {
     if (!triggerRef.current) return;
 
     const TIP_W = 210;
@@ -121,10 +121,10 @@ export default function AvgVolTooltip({ row, children }) {
     const vpW = window.innerWidth;
     const vpH = window.innerHeight;
 
-    // Horizontal positioning (prefer left, fallback right)
-    const spaceLeft = r.left;
+    // Horizontal: prefer opening to the left of the trigger cell
+    const spaceLeft  = r.left;
     const spaceRight = vpW - r.right;
-    
+
     let left;
     let openLeft = true;
 
@@ -135,37 +135,57 @@ export default function AvgVolTooltip({ row, children }) {
       left = r.right + GAP;
       openLeft = false;
     } else {
-      if (spaceLeft > spaceRight) {
-        left = Math.min(8, r.left - TIP_W - GAP);
+      // Neither side fits perfectly — pick whichever has more space
+      if (spaceLeft >= spaceRight) {
+        left = Math.max(8, r.left - TIP_W - GAP);
         openLeft = true;
       } else {
-        left = Math.max(vpW - TIP_W - 8, r.right + GAP);
+        left = Math.min(vpW - TIP_W - 8, r.right + GAP);
         openLeft = false;
       }
     }
 
-    // Vertical positioning (center relative to trigger)
-    let top = r.top + (r.height / 2) - (TIP_H / 2);
+    // Vertical: vertically center the card against the trigger row
+    let top = r.top + r.height / 2 - TIP_H / 2;
     top = Math.max(8, Math.min(top, vpH - TIP_H - 8));
 
-    // Calculate arrow position so it always points to the trigger's center
-    const arrowTop = r.top + (r.height / 2) - top;
+    // Arrow tip points at the vertical center of the trigger
+    const arrowTop = r.top + r.height / 2 - top;
 
-    setPos({ top, left, openLeft, arrowTop });
+    setState({ visible: true, top, left, openLeft, arrowTop });
   }, []);
 
-  const handleMouseEnter = useCallback(() => {
-    updatePosition();
-    setVisible(true);
-  }, [updatePosition]);
-
-  const handleMouseLeave = useCallback(() => {
-    setVisible(false);
+  const hideTooltip = useCallback(() => {
+    setState(prev => ({ ...prev, visible: false }));
   }, []);
 
-  // Handle scroll / resize while open
+  // Update position while open (scroll / resize)
+  const updatePosition = useCallback(() => {
+    setState(prev => {
+      if (!prev.visible || !triggerRef.current) return prev;
+      // Re-run same calculation inline
+      const TIP_W = 210, TIP_H = 185, GAP = 10;
+      const r   = triggerRef.current.getBoundingClientRect();
+      const vpW = window.innerWidth, vpH = window.innerHeight;
+      const spaceLeft = r.left, spaceRight = vpW - r.right;
+      let left, openLeft = true;
+      if (spaceLeft >= TIP_W + GAP)        { left = r.left - TIP_W - GAP; openLeft = true; }
+      else if (spaceRight >= TIP_W + GAP)  { left = r.right + GAP;        openLeft = false; }
+      else if (spaceLeft >= spaceRight)    { left = Math.max(8, r.left - TIP_W - GAP); openLeft = true; }
+      else                                 { left = Math.min(vpW - TIP_W - 8, r.right + GAP); openLeft = false; }
+      let top = r.top + r.height / 2 - TIP_H / 2;
+      top = Math.max(8, Math.min(top, vpH - TIP_H - 8));
+      const arrowTop = r.top + r.height / 2 - top;
+      return { ...prev, top, left, openLeft, arrowTop };
+    });
+  }, []);
+
+  const handleMouseEnter = useCallback(() => { showTooltip(); }, [showTooltip]);
+  const handleMouseLeave = useCallback(() => { hideTooltip(); }, [hideTooltip]);
+
+  // Update position on scroll / resize while visible
   useEffect(() => {
-    if (visible) {
+    if (state.visible) {
       window.addEventListener('scroll', updatePosition, true);
       window.addEventListener('resize', updatePosition);
       return () => {
@@ -173,13 +193,14 @@ export default function AvgVolTooltip({ row, children }) {
         window.removeEventListener('resize', updatePosition);
       };
     }
-  }, [visible, updatePosition]);
+  }, [state.visible, updatePosition]);
 
   const avgVol = Number(row.avgVol ?? row.avgVolume ?? 0);
   // Nothing to show if there's no avg volume
   if (!avgVol) return <>{children}</>;
 
   const { rows } = buildRows(row);
+  const { visible, top, left, openLeft, arrowTop } = state;
 
   return (
     <>
@@ -198,15 +219,15 @@ export default function AvgVolTooltip({ row, children }) {
       {visible && createPortal(
         <div
           className="avt-card"
-          style={{ top: pos.top, left: pos.left }}
+          style={{ top, left }}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           role="tooltip"
         >
           {/* Arrow */}
-          <div 
-            className={`avt-arrow avt-arrow--${pos.openLeft ? "right" : "left"}`} 
-            style={{ top: pos.arrowTop ? `${pos.arrowTop - 7}px` : '50%' }}
+          <div
+            className={`avt-arrow avt-arrow--${openLeft ? "right" : "left"}`}
+            style={{ top: `${arrowTop - 7}px` }}
           />
 
           {/* Title */}
