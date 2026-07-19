@@ -121,27 +121,29 @@ export default function AvgVolTooltip({ row, children }) {
     const vpW = window.innerWidth;
     const vpH = window.innerHeight;
 
-    // Horizontal: prefer opening to the left of the trigger cell
+    // Horizontal: prefer opening to the RIGHT of the trigger cell
     const spaceLeft  = r.left;
     const spaceRight = vpW - r.right;
 
     let left;
-    let openLeft = true;
+    let openLeft = false;  // false = arrow on left side = card opens right
 
-    if (spaceLeft >= TIP_W + GAP) {
-      left = r.left - TIP_W - GAP;
-      openLeft = true;
-    } else if (spaceRight >= TIP_W + GAP) {
+    if (spaceRight >= TIP_W + GAP) {
+      // Enough room on the right — open right
       left = r.right + GAP;
       openLeft = false;
+    } else if (spaceLeft >= TIP_W + GAP) {
+      // Fallback: open left
+      left = r.left - TIP_W - GAP;
+      openLeft = true;
     } else {
       // Neither side fits perfectly — pick whichever has more space
-      if (spaceLeft >= spaceRight) {
-        left = Math.max(8, r.left - TIP_W - GAP);
-        openLeft = true;
-      } else {
+      if (spaceRight >= spaceLeft) {
         left = Math.min(vpW - TIP_W - 8, r.right + GAP);
         openLeft = false;
+      } else {
+        left = Math.max(8, r.left - TIP_W - GAP);
+        openLeft = true;
       }
     }
 
@@ -168,11 +170,11 @@ export default function AvgVolTooltip({ row, children }) {
       const r   = triggerRef.current.getBoundingClientRect();
       const vpW = window.innerWidth, vpH = window.innerHeight;
       const spaceLeft = r.left, spaceRight = vpW - r.right;
-      let left, openLeft = true;
-      if (spaceLeft >= TIP_W + GAP)        { left = r.left - TIP_W - GAP; openLeft = true; }
-      else if (spaceRight >= TIP_W + GAP)  { left = r.right + GAP;        openLeft = false; }
-      else if (spaceLeft >= spaceRight)    { left = Math.max(8, r.left - TIP_W - GAP); openLeft = true; }
-      else                                 { left = Math.min(vpW - TIP_W - 8, r.right + GAP); openLeft = false; }
+      let left, openLeft = false;
+      if (spaceRight >= TIP_W + GAP)       { left = r.right + GAP;                       openLeft = false; }
+      else if (spaceLeft >= TIP_W + GAP)   { left = r.left - TIP_W - GAP;               openLeft = true; }
+      else if (spaceRight >= spaceLeft)    { left = Math.min(vpW - TIP_W - 8, r.right + GAP); openLeft = false; }
+      else                                 { left = Math.max(8, r.left - TIP_W - GAP);   openLeft = true; }
       let top = r.top + r.height / 2 - TIP_H / 2;
       top = Math.max(8, Math.min(top, vpH - TIP_H - 8));
       const arrowTop = r.top + r.height / 2 - top;
