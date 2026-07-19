@@ -16,6 +16,8 @@ import MainLayout from "./layouts/MainLayout";
 
 import Loading from "./components/Loading";
 
+import "./App.css";
+
 /* ============================================================
    Lazy Loaded Pages
 ============================================================ */
