@@ -108,28 +108,10 @@ export default function AvgVolTooltip({ row, children }) {
   const [pos,     setPos    ] = useState({ top: 0, left: 0, openLeft: true });
 
   const triggerRef = useRef(null);
-  const showTimer  = useRef(null);
-  const hideTimer  = useRef(null);
 
-  /* debounced show / hide so the user can move into the tooltip */
-  const scheduleShow = useCallback(() => {
-    clearTimeout(hideTimer.current);
-    showTimer.current = setTimeout(() => setVisible(true), 100);
-  }, []);
-
-  const scheduleHide = useCallback(() => {
-    clearTimeout(showTimer.current);
-    hideTimer.current = setTimeout(() => setVisible(false), 150);
-  }, []);
-
-  useEffect(() => () => {
-    clearTimeout(showTimer.current);
-    clearTimeout(hideTimer.current);
-  }, []);
-
-  /* Calculate position each time tooltip becomes visible */
-  useEffect(() => {
-    if (!visible || !triggerRef.current) return;
+  /* Calculate position synchronously to avoid top-left flash */
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current) return;
 
     const TIP_W = 210;
     const TIP_H = 185;
@@ -153,13 +135,11 @@ export default function AvgVolTooltip({ row, children }) {
       left = r.right + GAP;
       openLeft = false;
     } else {
-      // Doesn't fit perfectly on either side. Place on side with more space,
-      // avoiding strict clamping that covers the text.
       if (spaceLeft > spaceRight) {
-        left = Math.min(8, r.left - TIP_W - GAP); // pin to left edge but don't move right
+        left = Math.min(8, r.left - TIP_W - GAP);
         openLeft = true;
       } else {
-        left = Math.max(vpW - TIP_W - 8, r.right + GAP); // pin to right edge but don't move left
+        left = Math.max(vpW - TIP_W - 8, r.right + GAP);
         openLeft = false;
       }
     }
@@ -172,7 +152,28 @@ export default function AvgVolTooltip({ row, children }) {
     const arrowTop = r.top + (r.height / 2) - top;
 
     setPos({ top, left, openLeft, arrowTop });
-  }, [visible]);
+  }, []);
+
+  const handleMouseEnter = useCallback(() => {
+    updatePosition();
+    setVisible(true);
+  }, [updatePosition]);
+
+  const handleMouseLeave = useCallback(() => {
+    setVisible(false);
+  }, []);
+
+  // Handle scroll / resize while open
+  useEffect(() => {
+    if (visible) {
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
+    }
+  }, [visible, updatePosition]);
 
   const avgVol = Number(row.avgVol ?? row.avgVolume ?? 0);
   // Nothing to show if there's no avg volume
@@ -186,8 +187,8 @@ export default function AvgVolTooltip({ row, children }) {
       <span
         ref={triggerRef}
         className="avt-trigger"
-        onMouseEnter={scheduleShow}
-        onMouseLeave={scheduleHide}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
         {children}
         <span className="avt-caret-hint" aria-hidden="true">▾</span>
@@ -198,8 +199,8 @@ export default function AvgVolTooltip({ row, children }) {
         <div
           className="avt-card"
           style={{ top: pos.top, left: pos.left }}
-          onMouseEnter={scheduleShow}
-          onMouseLeave={scheduleHide}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
           role="tooltip"
         >
           {/* Arrow */}
@@ -209,7 +210,7 @@ export default function AvgVolTooltip({ row, children }) {
           />
 
           {/* Title */}
-          <div className="avt-title">Last 5 Trading Days</div>
+          <div className="avt-title">Last 5 Trading Sessions</div>
 
           {/* Row list */}
           <div className="avt-list">
