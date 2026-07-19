@@ -182,3 +182,170 @@
     border-right-color: var(--border);
   }
 }
+
+/* ============================================================
+   Avg Volume Tooltip  (avt-*)
+============================================================ */
+
+/* ── Trigger ──────────────────────────────────────────────── */
+.avt-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: default;
+  border-bottom: 1px dashed rgba(99, 179, 237, 0.4);
+  padding-bottom: 1px;
+  transition: border-color 0.15s;
+
+  &:hover {
+    border-bottom-color: rgba(99, 179, 237, 0.9);
+  }
+}
+
+.avt-caret-hint {
+  font-size: 9px;
+  color: rgba(99, 179, 237, 0.45);
+  line-height: 1;
+  transition: color 0.15s;
+
+  .avt-trigger:hover & {
+    color: rgba(99, 179, 237, 0.9);
+  }
+}
+
+/* ── Card ─────────────────────────────────────────────────── */
+.avt-card {
+  position: fixed;
+  z-index: 9999;
+  width: 210px;
+  background: #0d1a2e;
+  border: 1px solid rgba(99, 179, 237, 0.22);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(99, 179, 237, 0.07),
+    0 16px 36px rgba(0, 0, 0, 0.6),
+    0 4px 10px  rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  animation: avtFadeIn 0.13s ease;
+}
+
+@keyframes avtFadeIn {
+  from { opacity: 0; transform: translateY(5px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+/* ── Arrow caret ──────────────────────────────────────────── */
+.avt-arrow {
+  position: absolute;
+  top: 18px;
+  width: 0;
+  height: 0;
+}
+
+.avt-arrow--right {
+  right: -7px;
+  border-top:    7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left:   7px solid rgba(99, 179, 237, 0.22);
+}
+
+.avt-arrow--left {
+  left: -7px;
+  border-top:    7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-right:  7px solid rgba(99, 179, 237, 0.22);
+}
+
+/* ── Title bar ────────────────────────────────────────────── */
+.avt-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #63b3ed;
+  background: rgba(99, 179, 237, 0.08);
+  border-bottom: 1px solid rgba(99, 179, 237, 0.14);
+  padding: 8px 12px;
+}
+
+/* ── Row list ─────────────────────────────────────────────── */
+.avt-list {
+  padding: 4px 0;
+}
+
+.avt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  gap: 8px;
+  transition: background 0.1s;
+
+  &:hover {
+    background: rgba(99, 179, 237, 0.05);
+  }
+}
+
+.avt-row--today {
+  background: rgba(99, 179, 237, 0.07);
+}
+
+/* Date label */
+.avt-date {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.avt-today-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+/* Volume value */
+.avt-vol {
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.avt-vol--above { color: #4ade80; }
+.avt-vol--below { color: #cbd5e1; }
+
+/* ── Footer ───────────────────────────────────────────────── */
+.avt-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.avt-footer-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.avt-footer-val {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #63b3ed;
+}

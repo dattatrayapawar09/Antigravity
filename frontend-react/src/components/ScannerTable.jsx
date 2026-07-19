@@ -7,6 +7,7 @@ import {
 
 import Loading from "./Loading";
 import EmptyState from "./EmptyState";
+import AvgVolTooltip from "./AvgVolTooltip";
 
 import { useScanner } from "../context/ScannerContext";
 
@@ -334,10 +335,12 @@ export default function ScannerTable({ data = [] }) {
               </td>
 
               <td className="text-right">
-                {number(
-                  row.avgVol ??
-                  row.avgVolume
-                )}
+                <AvgVolTooltip row={row}>
+                  {number(
+                    row.avgVol ??
+                    row.avgVolume
+                  )}
+                </AvgVolTooltip>
               </td>
 
               <td className="text-right">
