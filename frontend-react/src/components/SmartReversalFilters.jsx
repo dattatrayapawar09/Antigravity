@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { FiSearch, FiRotateCcw, FiCalendar } from "react-icons/flex";
-import { FiSearch as FiSearchIcon, FiRotateCcw as FiRotateCcwIcon } from "react-icons/fi";
+import { FiSearch as FiSearchIcon, FiRotateCcw as FiRotateCcwIcon, FiCalendar } from "react-icons/fi";
 
 const LOOKBACK_OPTIONS = [10, 20, 30, 50];
 const DROP_OPTIONS     = [5, 7, 10, 15, 20];
