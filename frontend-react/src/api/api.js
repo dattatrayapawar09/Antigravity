@@ -178,6 +178,15 @@ export async function getEquityVolumeSurge() {
 }
 
 /* ============================================================
+   Smart Reversal Scanner
+============================================================ */
+
+export async function getSmartReversal(params = {}) {
+  const { data } = await API.get("/scanner/smart-reversal", { params });
+  return data;
+}
+
+/* ============================================================
    Scanner API (Future)
 ============================================================ */
 

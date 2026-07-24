@@ -42,6 +42,10 @@ const EquityVolumeSurge = lazy(() =>
   import("./pages/EquityVolumeSurge")
 );
 
+const SmartReversal = lazy(() =>
+  import("./pages/SmartReversal")
+);
+
 const Watchlist = lazy(() =>
   import("./pages/Watchlist")
 );
@@ -112,6 +116,11 @@ function App() {
             <Route
               path="/equity-volume-surge"
               element={<EquityVolumeSurge />}
+            />
+
+            <Route
+              path="/smart-reversal"
+              element={<SmartReversal />}
             />
 
             <Route

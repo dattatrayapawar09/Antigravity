@@ -8,6 +8,7 @@ import {
   FiWifi,
   FiWifiOff,
   FiClock,
+  FiZap,
 } from "react-icons/fi";
 
 import { useMemo } from "react";
@@ -41,6 +42,11 @@ const menuItems = [
     title: "Equity Volume Surge",
     path: "/equity-volume-surge",
     icon: <FiTrendingUp size={18} />,
+  },
+  {
+    title: "Smart Reversal Scanner",
+    path: "/smart-reversal",
+    icon: <FiZap size={18} />,
   },
   {
     title: "Watchlist",
