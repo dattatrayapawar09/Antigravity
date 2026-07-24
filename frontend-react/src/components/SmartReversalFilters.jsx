@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { FiSearch, FiRotateCcw } from "react-icons/fi";
+import { FiSearch, FiRotateCcw, FiCalendar } from "react-icons/flex";
+import { FiSearch as FiSearchIcon, FiRotateCcw as FiRotateCcwIcon } from "react-icons/fi";
 
 const LOOKBACK_OPTIONS = [10, 20, 30, 50];
 const DROP_OPTIONS     = [5, 7, 10, 15, 20];
@@ -11,6 +12,12 @@ const SORT_OPTIONS     = [
   { value: "volumeRatio",     label: "Volume Ratio" },
   { value: "closePosition",   label: "Close Position" },
 ];
+const SCAN_MODE_OPTIONS = [
+  { value: "auto",     label: "Auto (Live → History)" },
+  { value: "live",     label: "Live (Intraday only)" },
+  { value: "history",  label: "History (Last EOD)" },
+  { value: "backtest", label: "Backtest (Pick Date)" },
+];
 
 const DEFAULT_FILTERS = {
   lookbackDays:   20,
@@ -21,6 +28,8 @@ const DEFAULT_FILTERS = {
   sector:         "All",
   search:         "",
   sortBy:         "score",
+  scanMode:       "auto",
+  scanDate:       new Date().toISOString().split("T")[0],
 };
 
 export default function SmartReversalFilters({
@@ -36,7 +45,7 @@ export default function SmartReversalFilters({
     ...Array.from(new Set(stocks.map((x) => x.sector).filter(Boolean))).sort(),
   ];
 
-  // Notify parent of server-side param changes (lookback, minDrop, VRatio, closePos)
+  // Notify parent of server-side param changes (lookback, minDrop, VRatio, closePos, scanMode, scanDate)
   useEffect(() => {
     if (onParamChange) {
       onParamChange({
@@ -44,6 +53,8 @@ export default function SmartReversalFilters({
         minPriceDrop:   filters.minPriceDrop,
         minVolumeRatio: filters.minVolumeRatio,
         closePosition:  filters.closePosition,
+        scanMode:       filters.scanMode,
+        scanDate:       filters.scanMode === "backtest" ? filters.scanDate : undefined,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,6 +63,8 @@ export default function SmartReversalFilters({
     filters.minPriceDrop,
     filters.minVolumeRatio,
     filters.closePosition,
+    filters.scanMode,
+    filters.scanDate,
   ]);
 
   // Client-side filtering (signal, sector, search, sort)
@@ -105,7 +118,7 @@ export default function SmartReversalFilters({
 
         {/* Search */}
         <div className="relative xl:col-span-2">
-          <FiSearch className="absolute left-3 top-3 text-slate-400" size={14} />
+          <FiSearchIcon className="absolute left-3 top-3 text-slate-400" size={14} />
           <input
             id="sr-search"
             type="text"
@@ -192,8 +205,8 @@ export default function SmartReversalFilters({
         </div>
       </div>
 
-      {/* Row 2: Sector */}
-      <div className="mt-3 flex flex-wrap items-center gap-3">
+      {/* Row 2: Sector and Scan Mode */}
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6 items-end">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-slate-400">Sector</label>
           <select
@@ -208,13 +221,40 @@ export default function SmartReversalFilters({
           </select>
         </div>
 
-        <div className="ml-auto mt-4">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-cyan-400">Data Mode</label>
+          <select
+            id="sr-mode"
+            value={filters.scanMode}
+            onChange={(e) => set("scanMode", e.target.value)}
+            className={selectCls}
+          >
+            {SCAN_MODE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {filters.scanMode === "backtest" && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-cyan-400">Backtest Date</label>
+            <input
+              type="date"
+              value={filters.scanDate}
+              max={new Date().toISOString().split("T")[0]}
+              onChange={(e) => set("scanDate", e.target.value)}
+              className="rounded-lg border border-cyan-700 bg-slate-950 p-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+            />
+          </div>
+        )}
+
+        <div className="ml-auto mt-4 md:col-start-4 xl:col-start-6">
           <button
             id="sr-reset"
             onClick={reset}
-            className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
+            className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 w-full justify-center"
           >
-            <FiRotateCcw size={14} />
+            <FiRotateCcwIcon size={14} />
             Reset
           </button>
         </div>

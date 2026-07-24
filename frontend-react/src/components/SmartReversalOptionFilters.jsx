@@ -37,6 +37,12 @@ const SORT_OPTS        = [
   { value: "priceDropPercent",label: "Price Drop"     },
   { value: "underlyingScore", label: "Underlying Score"},
 ];
+const SCAN_MODE_OPTS = [
+  { value: "auto",     label: "Auto (Live → History)" },
+  { value: "live",     label: "Live (Intraday only)" },
+  { value: "history",  label: "History (Last EOD)" },
+  { value: "backtest", label: "Backtest (Pick Date)" },
+];
 
 /* ── defaults ───────────────────────────────────────────────────────────────── */
 
@@ -49,6 +55,8 @@ const DEFAULT_SERVER = {
   expiry:             "both",
   optionType:         "both",
   maxSpreadPct:       2.0,
+  scanMode:           "auto",
+  scanDate:           new Date().toISOString().split("T")[0],
 };
 
 const DEFAULT_CLIENT = {
@@ -60,9 +68,9 @@ const DEFAULT_CLIENT = {
 
 /* ── select helper ───────────────────────────────────────────────────────────── */
 
-function Sel({ id, label, value, onChange, children }) {
+function Sel({ id, label, value, onChange, children, className = "" }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className={`flex flex-col gap-1 ${className}`}>
       {label && (
         <label htmlFor={id} className="text-xs font-medium text-slate-400">
           {label}
@@ -98,12 +106,17 @@ export default function SmartReversalOptionFilters({
 
   // Notify parent of server-param changes
   useEffect(() => {
-    if (onParamChange) onParamChange(server);
+    if (onParamChange) {
+      onParamChange({
+        ...server,
+        scanDate: server.scanMode === "backtest" ? server.scanDate : undefined,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     server.lookbackDays, server.minPriceDrop, server.minVolumeRatio,
     server.optionVolumeRatio, server.strikeRange, server.expiry,
-    server.optionType, server.maxSpreadPct,
+    server.optionType, server.maxSpreadPct, server.scanMode, server.scanDate,
   ]);
 
   // Client-side filtering
@@ -191,7 +204,7 @@ export default function SmartReversalOptionFilters({
       </div>
 
       {/* Row 2: client-side filters */}
-      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8 items-end">
         {/* Search */}
         <div className="relative xl:col-span-2">
           <FiSearch className="absolute left-3 top-3 text-slate-400" size={14} />
@@ -220,11 +233,31 @@ export default function SmartReversalOptionFilters({
           {SORT_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </Sel>
 
+        <Sel id="sro-mode" label={<span className="text-cyan-400">Data Mode</span>} value={server.scanMode}
+          onChange={(v) => setS("scanMode", v)}>
+          {SCAN_MODE_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </Sel>
+
+        {server.scanMode === "backtest" ? (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-cyan-400">Backtest Date</label>
+            <input
+              type="date"
+              value={server.scanDate}
+              max={new Date().toISOString().split("T")[0]}
+              onChange={(e) => setS("scanDate", e.target.value)}
+              className="rounded-lg border border-cyan-700 bg-slate-950 p-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
+            />
+          </div>
+        ) : (
+          <div className="hidden xl:block"></div>
+        )}
+
         <div className="flex items-end">
           <button
             id="sro-reset"
             onClick={reset}
-            className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
           >
             <FiRotateCcw size={14} />
             Reset

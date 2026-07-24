@@ -2,26 +2,9 @@
 routes/smart_reversal_options.py — Smart Reversal Options Scanner.
 
 GET /api/scanner/smart-reversal-options
-    ?lookbackDays=20        – sessions to find the recent swing high
-    ?minPriceDrop=10        – min % drop from recent high (positive number)
-    ?minVolumeRatio=2       – min stock today/5dayAvg volume ratio
-    ?closePosition=70       – min close-position % for the underlying
-    ?optionVolumeRatio=2    – min option today/5dayAvg volume ratio
-    ?strikeRange=2          – ATM ± N strikes  (0 = ATM only, 1, 2, 5)
-    ?expiry=both            – current / next / both
-    ?optionType=both        – CE / PE / both
-    ?minOI=0                – minimum open interest per contract
-    ?maxSpreadPct=2.0       – max bid-ask spread as % of mid-price
-    ?limit=100              – max results returned
-
-Six-phase pipeline
-──────────────────────────────────────────────────────────────────
-Phase 1  Underlying stock filter  – price drop, vol surge, close pos
-Phase 2  Option chain build       – ATM ±N for current / next expiry
-Phase 3  Batch option quotes      – single FULL quote call to Angel One
-Phase 4  Option SQLite history    – avg vol + prev OI for all contracts
-Phase 5  Per-contract scoring     – vol ratio, OI pattern, liquidity, score
-Phase 6  Sort, rank, cache, return
+    ... (all previous params) ...
+    ?scanMode=auto        – "live" | "history" | "auto" | "backtest"
+    ?scanDate=YYYY-MM-DD  – (backtest only) treat this date's candle as today
 """
 from __future__ import annotations
 
@@ -106,6 +89,10 @@ class SmartReversalOptionContract(BaseModel):
 
     smartScore: float
     signal: str                # Strong Bullish / Bullish / Watch / Ignore
+    
+    # Backtest metadata
+    scanDate: Optional[str] = None
+    scanMode: str = "live"
 
 
 class SmartReversalOptionsResponse(BaseModel):
@@ -114,6 +101,8 @@ class SmartReversalOptionsResponse(BaseModel):
     optionsScanned: int
     totalFnoScanned: int
     elapsedMs: int
+    scanMode: str
+    scanDate: Optional[str] = None
 
 
 # ── Helper: underlying reversal score (mirrors scanner.py formula) ────────────
@@ -127,14 +116,6 @@ def _underlying_score(
     close: float,
     bullish: bool,
 ) -> float:
-    """
-    Weight  Parameter
-    30      Volume Ratio      (capped at 5× → 30 pts)
-    25      Price Drop        (deeper = higher, capped at -25 % → 25 pts)
-    20      Close Position    (0-100 % → 0-20 pts)
-    15      Recovery from Low ((close-low)/(high-low) → 0-15 pts)
-    10      Bullish Candle    (boolean)
-    """
     vol_s  = min(vol_ratio / 5.0, 1.0) * 30
     drop_s = min(abs(price_drop_pct) / 25.0, 1.0) * 25
     cp_s   = (close_pos / 100.0) * 20
@@ -155,23 +136,6 @@ def _oi_pattern_and_score(
     current_ltp: float,
     option_type: str,
 ) -> Tuple[str, float]:
-    """
-    Returns (oiPattern label, oi_score 0-20).
-
-    CE – bullish reversal context:
-        OI↑ + Price↑  →  Long Build-up   (strong bullish)  20 pts
-        OI↓ + Price↑  →  Short Covering  (bullish)          15 pts
-        OI↑ + Price↓  →  Short Build-up  (bearish)           3 pts
-        OI↓ + Price↓  →  Long Unwinding  (bearish)           3 pts
-        neutral                           10 pts
-
-    PE – bullish reversal context:
-        OI↓ + Price↓  →  Short Covering  (bears covering)   20 pts
-        OI↑ + Price↑  →  Short Build-up  (neutral)          10 pts
-        OI↓ + Price↑  →  Long Unwinding  (slightly bullish) 10 pts
-        OI↑ + Price↓  →  Long Build-up   (bearish for stk)   3 pts
-        neutral                           10 pts
-    """
     THRESHOLD = 1.0                         # % OI change considered significant
     oi_up    = oi_change_pct >  THRESHOLD
     oi_down  = oi_change_pct < -THRESHOLD
@@ -213,14 +177,6 @@ def _option_smart_score(
     spread_pct: float,
     max_spread_pct: float,
 ) -> float:
-    """
-    Weight  Component
-    35      Underlying reversal score   (0-100 → 0-35 pts)
-    25      Option volume ratio         (capped 5× → 0-25 pts)
-    20      OI pattern score            (raw 0-20 pts, already normalised)
-    10      Option price recovery       (close position → 0-10 pts)
-    10      Liquidity / spread quality  (0-10 pts)
-    """
     u_s   = (underlying_score / 100.0) * 35
     vr_s  = min(opt_vol_ratio / 5.0, 1.0) * 25
     oi_s  = oi_score                       # already 0-20
@@ -269,7 +225,6 @@ def _option_signal(
 # ── Helper: pick expiries for a stock ────────────────────────────────────────
 
 def _get_stock_expiry_list(symbol: str, count: int = 2) -> list[str]:
-    """Return up to `count` distinct monthly expiries for a F&O stock, ascending."""
     resolved  = IU.resolve_symbol(symbol)
     available = IU.get_available_expiries(resolved) or IU.get_available_expiries(symbol)
     result: list[str] = []
@@ -282,6 +237,28 @@ def _get_stock_expiry_list(symbol: str, count: int = 2) -> list[str]:
             if len(result) >= count:
                 break
     return result
+
+# ── History helpers ───────────────────────────────────────────────────────────
+
+def _find_candle_idx(hist_sorted: list, scan_date: str) -> int:
+    """Return the index of the candle matching scan_date (YYYY-MM-DD). Falls back to last."""
+    for i in range(len(hist_sorted) - 1, -1, -1):
+        td = hist_sorted[i].get("trading_date", "")
+        if td.startswith(scan_date):
+            return i
+    logger.warning("[SRO] No candle found for date %s — using last", scan_date)
+    return len(hist_sorted) - 1
+
+
+def _extract_from_candle(c: dict) -> tuple:
+    """Return (open, high, low, close, volume) from a history candle dict."""
+    return (
+        float(c.get("open")   or 0),
+        float(c.get("high")   or 0),
+        float(c.get("low")    or 0),
+        float(c.get("close")  or 0),
+        int(c.get("volume")   or 0),
+    )
 
 
 # ── Main endpoint ─────────────────────────────────────────────────────────────
@@ -299,14 +276,23 @@ async def smart_reversal_options_scanner(
     minOI: int               = Query(default=0,   ge=0),
     maxSpreadPct: float      = Query(default=2.0, ge=0.1, le=10.0),
     limit: int               = Query(default=100, ge=1,   le=500),
+    scanMode: str            = Query(default="auto"),      # live|history|auto|backtest
+    scanDate: Optional[str]  = Query(default=None),
 ) -> SmartReversalOptionsResponse:
 
     t_start = time.time()
+    
+    # Normalise mode
+    effective_mode = scanMode.lower()
+    if scanDate and effective_mode == "auto":
+        effective_mode = "backtest"
+
+    use_history = effective_mode in ("history", "backtest")
 
     cache_key = (
         f"{lookbackDays}|{minPriceDrop}|{minVolumeRatio}|{closePosition}|"
         f"{optionVolumeRatio}|{strikeRange}|{expiry}|{optionType}|"
-        f"{minOI}|{maxSpreadPct}"
+        f"{minOI}|{maxSpreadPct}|{effective_mode}|{scanDate}"
     )
     cached = _sro_cache.get(cache_key)
     if cached and (time.time() - cached["ts"]) < _CACHE_TTL:
@@ -315,15 +301,9 @@ async def smart_reversal_options_scanner(
         return cached["data"]
 
     client = get_client()
-    if not client.is_token_valid():
-        logger.warning("[SRO] Not authenticated — returning empty")
-        return SmartReversalOptionsResponse(
-            contracts=[], stocksQualified=0, optionsScanned=0,
-            totalFnoScanned=0, elapsedMs=0,
-        )
 
     all_symbols = list(ALL_FNO_STOCKS)
-    logger.info("[SRO] Phase 1 — scanning %d F&O stocks for underlying reversal", len(all_symbols))
+    logger.info("[SRO] Phase 1 — scanning %d F&O stocks for underlying reversal (mode=%s)", len(all_symbols), effective_mode)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Phase 1A: Batch SQLite history for all stock symbols
@@ -333,49 +313,89 @@ async def smart_reversal_options_scanner(
     # ─────────────────────────────────────────────────────────────────────────
     # Phase 1B: Batch live FULL quotes for all F&O cash instruments
     # ─────────────────────────────────────────────────────────────────────────
-    cash_instruments: list[dict] = []
-    sym_to_token:     dict[str, str] = {}
-
-    for sym in all_symbols:
-        cash = IU.get_cash_token(sym)
-        if cash:
-            token = cash["symboltoken"]
-            cash_instruments.append({"exchange": cash["exchange"], "symboltoken": token})
-            sym_to_token[sym] = _token_key(token)
-
     stock_quotes: dict[str, Any] = {}
-    if cash_instruments:
-        stock_quotes = await _batch_quote(cash_instruments, "FULL") or {}
+    sym_to_token: dict[str, str] = {}
+    
+    if not use_history:
+        if not client.is_token_valid():
+            if effective_mode == "live":
+                logger.warning("[SRO] Not authenticated — returning empty")
+                return SmartReversalOptionsResponse(
+                    contracts=[], stocksQualified=0, optionsScanned=0,
+                    totalFnoScanned=len(all_symbols), elapsedMs=0,
+                    scanMode=effective_mode, scanDate=scanDate,
+                )
+        else:
+            cash_instruments: list[dict] = []
+            for sym in all_symbols:
+                cash = IU.get_cash_token(sym)
+                if cash:
+                    token = cash["symboltoken"]
+                    cash_instruments.append({"exchange": cash["exchange"], "symboltoken": token})
+                    sym_to_token[sym] = _token_key(token)
+            if cash_instruments:
+                stock_quotes = await _batch_quote(cash_instruments, "FULL") or {}
 
     # ─────────────────────────────────────────────────────────────────────────
     # Phase 1C: Apply underlying stock reversal filter
     # ─────────────────────────────────────────────────────────────────────────
     qualified_stocks: dict[str, dict] = {}
+    overall_mode_used = effective_mode
+    overall_scan_date = None
 
     for sym in all_symbols:
         try:
-            tk = sym_to_token.get(sym)
-            if not tk:
-                continue
-            q = stock_quotes.get(tk)
-            if not q:
-                continue
-
-            today_close = float(q.get("ltp")    or q.get("close")  or 0)
-            today_open  = float(q.get("open")   or 0)
-            today_high  = float(q.get("high")   or 0)
-            today_low   = float(q.get("low")    or 0)
-            today_vol   = int(q.get("volume")   or q.get("tradeVolume") or 0)
-
-            if today_close <= 0 or today_high <= today_low:
-                continue
-
             history = stock_history_map.get(sym, [])
             if not history:
                 continue
 
             hist_sorted = sorted(history, key=lambda h: h.get("trading_date", ""))
-            lookback    = hist_sorted[-lookbackDays:]
+            
+            today_open = today_high = today_low = today_close = 0.0
+            today_vol  = 0
+            mode_used  = effective_mode
+            
+            if use_history:
+                if len(hist_sorted) < 2:
+                    continue
+                today_idx = _find_candle_idx(hist_sorted, scanDate) if scanDate else len(hist_sorted) - 1
+                if today_idx < 1:
+                    continue
+                    
+                today_c    = hist_sorted[today_idx]
+                yesterday  = hist_sorted[today_idx - 1]
+                lookback   = hist_sorted[max(0, today_idx - lookbackDays): today_idx]
+                
+                today_open, today_high, today_low, today_close, today_vol = _extract_from_candle(today_c)
+                scan_date_label = today_c.get("trading_date", scanDate or "")
+            else:
+                tk = sym_to_token.get(sym)
+                q  = stock_quotes.get(tk) if tk else None
+                live_vol = int(q.get("volume") or q.get("tradeVolume") or 0) if q else 0
+                
+                if live_vol > 0 and q:
+                    today_close = float(q.get("ltp")    or q.get("close")  or 0)
+                    today_open  = float(q.get("open")   or 0)
+                    today_high  = float(q.get("high")   or 0)
+                    today_low   = float(q.get("low")    or 0)
+                    today_vol   = live_vol
+                    yesterday   = hist_sorted[-1]
+                    lookback    = hist_sorted[-lookbackDays:]
+                    mode_used   = "live"
+                    scan_date_label = None
+                else:
+                    if len(hist_sorted) < 2:
+                        continue
+                    today_idx = len(hist_sorted) - 1
+                    today_c = hist_sorted[today_idx]
+                    yesterday = hist_sorted[today_idx - 1]
+                    lookback = hist_sorted[max(0, today_idx - lookbackDays): today_idx]
+                    today_open, today_high, today_low, today_close, today_vol = _extract_from_candle(today_c)
+                    mode_used = "history"
+                    scan_date_label = today_c.get("trading_date")
+
+            if today_close <= 0 or today_high <= today_low:
+                continue
 
             # Step 1: Recent Swing High
             recent_high      = 0.0
@@ -396,12 +416,11 @@ async def smart_reversal_options_scanner(
                 continue
 
             # Yesterday's session values
-            yesterday     = hist_sorted[-1]
             yesterday_low = float(yesterday.get("low")    or 0)
             yesterday_vol = int(yesterday.get("volume")   or 0)
 
             # Step 3a: Volume Ratio
-            recent_5  = hist_sorted[-5:]
+            recent_5 = hist_sorted[-5:] if not use_history else hist_sorted[max(0, today_idx - 5): today_idx]
             avg_vol   = (
                 int(sum(int(h.get("volume") or 0) for h in recent_5) / len(recent_5))
                 if recent_5 else 0
@@ -429,8 +448,12 @@ async def smart_reversal_options_scanner(
                 vol_ratio, price_drop_pct, close_pos,
                 today_high, today_low, today_close, True,
             )
-            vol_history = [int(h.get("volume") or 0) for h in hist_sorted[-6:]]
+            slice_start = today_idx - 5 if mode_used in ("history", "backtest") else len(hist_sorted) - 6
+            vol_history = [int(h.get("volume") or 0) for h in hist_sorted[max(0, slice_start):today_idx + 1 if mode_used in ("history", "backtest") else None]]
 
+            overall_mode_used = mode_used
+            overall_scan_date = scan_date_label
+            
             qualified_stocks[sym] = {
                 "score":         score,
                 "spot":          today_close,
@@ -440,6 +463,7 @@ async def smart_reversal_options_scanner(
                 "volRatio":      vol_ratio,
                 "closePos":      close_pos,
                 "volHistory":    vol_history,
+                "todayIdx":      today_idx if mode_used in ("history", "backtest") else None,
             }
 
         except Exception as exc:
@@ -452,6 +476,7 @@ async def smart_reversal_options_scanner(
         resp = SmartReversalOptionsResponse(
             contracts=[], stocksQualified=0, optionsScanned=0,
             totalFnoScanned=len(all_symbols), elapsedMs=elapsed,
+            scanMode=overall_mode_used, scanDate=overall_scan_date
         )
         _sro_cache[cache_key] = {"ts": time.time(), "data": resp}
         return resp
@@ -529,17 +554,18 @@ async def smart_reversal_options_scanner(
     logger.info("[SRO] Phase 2 done — %d option contracts to quote", len(option_instruments))
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Phase 3: Batch option FULL quotes
+    # Phase 3 & 4: Batch option FULL quotes AND Option SQLite history
     # ─────────────────────────────────────────────────────────────────────────
     option_quotes: dict[str, Any] = {}
-    if option_instruments:
-        logger.info("[SRO] Phase 3 — fetching quotes for %d option contracts", len(option_instruments))
-        option_quotes = await _batch_quote(option_instruments, "FULL") or {}
-        logger.info("[SRO] Phase 3 done — %d quotes received", len(option_quotes))
+    
+    if overall_mode_used == "live":
+        if option_instruments:
+            logger.info("[SRO] Phase 3 — fetching quotes for %d option contracts", len(option_instruments))
+            option_quotes = await _batch_quote(option_instruments, "FULL") or {}
+            logger.info("[SRO] Phase 3 done — %d quotes received", len(option_quotes))
+    else:
+        logger.info("[SRO] Phase 3 skipped for mode=%s", overall_mode_used)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Phase 4: Option SQLite history (avg volume + prev OI)
-    # ─────────────────────────────────────────────────────────────────────────
     option_history_map = history_db.get_history_map(option_contract_ids)
     logger.info("[SRO] Phase 4 done — %d contract histories found", len(option_history_map))
 
@@ -551,11 +577,6 @@ async def smart_reversal_options_scanner(
 
     for token, meta in option_meta.items():
         try:
-            q = option_quotes.get(token)
-            if not q:
-                continue
-
-            options_scanned += 1
             sym        = meta["symbol"]
             stock_data = qualified_stocks.get(sym)
             if not stock_data:
@@ -564,12 +585,81 @@ async def smart_reversal_options_scanner(
             opt_type    = meta["optionType"]
             lot_size    = max(int(meta["lotSize"]), 1)
             contract_id = meta["contractId"]
+            
+            # Fetch option history for the contract
+            opt_hist = option_history_map.get(contract_id, [])
+            opt_hist_sorted = sorted(opt_hist, key=lambda h: h.get("trading_date", ""))
 
-            # ── Live OHLC ─────────────────────────────────────────────────────
-            opt_ltp  = float(q.get("ltp")  or q.get("lastPrice") or 0)
-            opt_open = float(q.get("open") or 0)
-            opt_high = float(q.get("high") or 0)
-            opt_low  = float(q.get("low")  or 0)
+            # Handle OHLCV depending on mode
+            bid = ask = spread = spread_pct = 0.0
+            iv = delta = gamma = theta = vega = None
+            
+            if overall_mode_used in ("history", "backtest"):
+                today_idx = stock_data["todayIdx"]
+                if not today_idx or len(opt_hist_sorted) <= today_idx:
+                    continue
+                    
+                today_c = opt_hist_sorted[today_idx]
+                opt_open, opt_high, opt_low, opt_ltp, opt_vol_qty = _extract_from_candle(today_c)
+                current_oi = int(today_c.get("oi") or 0)
+                
+                if today_idx < 1:
+                    continue
+                yesterday_c = opt_hist_sorted[today_idx - 1]
+                prev_oi = int(yesterday_c.get("oi") or 0)
+                yesterday_opt_vol_qty = int(yesterday_c.get("volume") or 0)
+                prev_opt_close = float(yesterday_c.get("close") or 0)
+                
+                recent_5_opt = opt_hist_sorted[max(0, today_idx - 5): today_idx]
+                opt_vol_history_list = opt_hist_sorted[max(0, today_idx - 5): today_idx + 1]
+                options_scanned += 1
+                
+                if overall_mode_used == "history":
+                    # For current history mode where spread is needed but unavailable, we set 0
+                    pass
+            else:
+                q = option_quotes.get(token)
+                if not q:
+                    continue
+                options_scanned += 1
+                
+                opt_ltp  = float(q.get("ltp")  or q.get("lastPrice") or 0)
+                opt_open = float(q.get("open") or 0)
+                opt_high = float(q.get("high") or 0)
+                opt_low  = float(q.get("low")  or 0)
+                opt_vol_qty = int(
+                    q.get("volume") or q.get("tradeVolume") or
+                    q.get("volumeTradedToday") or q.get("totalTradedVolume") or 0
+                )
+                current_oi = int(q.get("opnInterest") or q.get("openInterest") or q.get("open_interest") or 0)
+                
+                bid      = float(q.get("bestBidPrice") or q.get("bidPrice") or 0)
+                ask      = float(q.get("bestAskPrice") or q.get("askPrice") or 0)
+                spread   = round(max(0.0, ask - bid), 2)
+                mid      = (ask + bid) / 2.0 if (ask + bid) > 0 else max(opt_ltp, 0.01)
+                spread_pct = round((spread / mid) * 100, 2) if mid > 0 else 99.0
+                
+                def _safe_float(v: Any) -> Optional[float]:
+                    try:
+                        f = float(v or 0)
+                        return f if f != 0 else None
+                    except Exception:
+                        return None
+
+                iv    = _safe_float(q.get("impliedVol") or q.get("impliedVolatility"))
+                delta = _safe_float(q.get("delta"))
+                gamma = _safe_float(q.get("gamma"))
+                theta = _safe_float(q.get("theta"))
+                vega  = _safe_float(q.get("vega"))
+                
+                recent_5_opt = opt_hist_sorted[-5:]
+                prev_oi = int(opt_hist_sorted[-1].get("oi", 0)) if opt_hist_sorted else 0
+                yesterday_opt_vol_qty = int(opt_hist_sorted[-1].get("volume", 0)) if opt_hist_sorted else 0
+                prev_opt_close = float(opt_hist_sorted[-1].get("close", 0)) if opt_hist_sorted else 0.0
+                opt_vol_history_list = opt_hist_sorted[-6:]
+                
+                if spread_pct > maxSpreadPct:
+                    continue   # too illiquid
 
             if opt_ltp <= 0:
                 continue
@@ -582,57 +672,23 @@ async def smart_reversal_options_scanner(
                 continue   # option must close higher than open
 
             # ── Live Volume (convert qty → lots) ──────────────────────────────
-            opt_vol_qty  = int(
-                q.get("volume") or q.get("tradeVolume") or
-                q.get("volumeTradedToday") or q.get("totalTradedVolume") or 0
-            )
             opt_vol_lots = round(opt_vol_qty / lot_size)
-
-            # ── Live OI ───────────────────────────────────────────────────────
-            current_oi = int(q.get("opnInterest") or q.get("openInterest") or q.get("open_interest") or 0)
-
-            # ── Liquidity (Step 7) ────────────────────────────────────────────
-            bid      = float(q.get("bestBidPrice") or q.get("bidPrice") or 0)
-            ask      = float(q.get("bestAskPrice") or q.get("askPrice") or 0)
-            spread   = round(max(0.0, ask - bid), 2)
-            mid      = (ask + bid) / 2.0 if (ask + bid) > 0 else max(opt_ltp, 0.01)
-            spread_pct = round((spread / mid) * 100, 2) if mid > 0 else 99.0
-
-            if spread_pct > maxSpreadPct:
-                continue   # too illiquid
+            yesterday_opt_vol = round(yesterday_opt_vol_qty / lot_size)
+            
             if current_oi < minOI:
                 continue
 
-            # ── Optional Greeks ───────────────────────────────────────────────
-            def _safe_float(v: Any) -> Optional[float]:
-                try:
-                    f = float(v or 0)
-                    return f if f != 0 else None
-                except Exception:
-                    return None
-
-            iv    = _safe_float(q.get("impliedVol") or q.get("impliedVolatility"))
-            delta = _safe_float(q.get("delta"))
-            gamma = _safe_float(q.get("gamma"))
-            theta = _safe_float(q.get("theta"))
-            vega  = _safe_float(q.get("vega"))
-
             # ── Option history: avg vol + prev OI ─────────────────────────────
-            opt_hist = option_history_map.get(contract_id, [])
-            opt_hist_sorted = sorted(opt_hist, key=lambda h: h.get("trading_date", ""))
-
-            recent_5_opt = opt_hist_sorted[-5:]
-            avg_opt_vol  = (
+            avg_opt_vol_qty  = (
                 int(sum(int(h.get("volume") or 0) for h in recent_5_opt) / len(recent_5_opt))
                 if recent_5_opt else 0
             )
-            prev_oi      = int(opt_hist_sorted[-1].get("oi", 0)) if opt_hist_sorted else 0
+            avg_opt_vol = round(avg_opt_vol_qty / lot_size)
+            
             oi_change_pct = (
                 round(((current_oi - prev_oi) / prev_oi) * 100, 2)
                 if prev_oi > 0 else 0.0
             )
-            yesterday_opt_vol = int(opt_hist_sorted[-1].get("volume", 0)) if opt_hist_sorted else 0
-            prev_opt_close    = float(opt_hist_sorted[-1].get("close", 0)) if opt_hist_sorted else 0.0
 
             # ── Step 5: Option Volume Ratio ───────────────────────────────────
             opt_vol_ratio = (
@@ -651,7 +707,7 @@ async def smart_reversal_options_scanner(
             )
 
             # ── Volume history (lots) ─────────────────────────────────────────
-            opt_vol_history = [int(h.get("volume") or 0) for h in opt_hist_sorted[-6:]]
+            opt_vol_history = [int(h.get("volume") or 0) // lot_size for h in opt_vol_history_list]
 
             # ── Smart Score ───────────────────────────────────────────────────
             smart_score = _option_smart_score(
@@ -728,6 +784,9 @@ async def smart_reversal_options_scanner(
 
                     smartScore=smart_score,
                     signal=signal,
+                    
+                    scanDate=overall_scan_date,
+                    scanMode=overall_mode_used,
                 )
             )
 
@@ -744,8 +803,8 @@ async def smart_reversal_options_scanner(
 
     elapsed_ms = int((time.time() - t_start) * 1000)
     logger.info(
-        "[SRO] Done — %d contracts from %d stocks | %d options scanned | %dms",
-        len(results), len(qualified_stocks), options_scanned, elapsed_ms,
+        "[SRO] Done — %d contracts from %d stocks | %d options scanned | mode=%s | %dms",
+        len(results), len(qualified_stocks), options_scanned, overall_mode_used, elapsed_ms,
     )
 
     response = SmartReversalOptionsResponse(
@@ -754,6 +813,8 @@ async def smart_reversal_options_scanner(
         optionsScanned=options_scanned,
         totalFnoScanned=len(all_symbols),
         elapsedMs=elapsed_ms,
+        scanMode=overall_mode_used,
+        scanDate=overall_scan_date,
     )
     _sro_cache[cache_key] = {"ts": time.time(), "data": response}
     return response

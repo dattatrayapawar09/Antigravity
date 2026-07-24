@@ -12,6 +12,8 @@ const DEFAULT_PARAMS = {
   minPriceDrop:   10,
   minVolumeRatio: 2,
   closePosition:  70,
+  scanMode:       "auto",
+  scanDate:       new Date().toISOString().split("T")[0],
 };
 
 export default function SmartReversal() {
@@ -74,7 +76,9 @@ export default function SmartReversal() {
       prev.lookbackDays   !== newParams.lookbackDays   ||
       prev.minPriceDrop   !== newParams.minPriceDrop   ||
       prev.minVolumeRatio !== newParams.minVolumeRatio ||
-      prev.closePosition  !== newParams.closePosition;
+      prev.closePosition  !== newParams.closePosition  ||
+      prev.scanMode       !== newParams.scanMode       ||
+      prev.scanDate       !== newParams.scanDate;
     if (changed) {
       params.current = newParams;
       fetchData(newParams);

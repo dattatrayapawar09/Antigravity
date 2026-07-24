@@ -16,6 +16,8 @@ const DEFAULT_PARAMS = {
   expiry:             "both",
   optionType:         "both",
   maxSpreadPct:       2.0,
+  scanMode:           "auto",
+  scanDate:           new Date().toISOString().split("T")[0],
 };
 
 export default function SmartReversalOptions() {
