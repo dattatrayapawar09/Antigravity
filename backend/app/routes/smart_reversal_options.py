@@ -437,16 +437,12 @@ async def smart_reversal_options_scanner(
             )
             if close_pos < closePosition:
                 continue
-            if today_close <= today_open:
-                continue   # must be a bullish candle
-            if today_low >= yesterday_low and yesterday_low > 0:
-                continue   # lower low required
-            if today_vol <= yesterday_vol:
-                continue   # today's volume must exceed yesterday
+            bullish_candle = today_close > today_open
+            lower_low      = (today_low < yesterday_low) if yesterday_low > 0 else False
 
             score       = _underlying_score(
                 vol_ratio, price_drop_pct, close_pos,
-                today_high, today_low, today_close, True,
+                today_high, today_low, today_close, bullish_candle,
             )
             slice_start = today_idx - 5 if mode_used in ("history", "backtest") else len(hist_sorted) - 6
             vol_history = [int(h.get("volume") or 0) for h in hist_sorted[max(0, slice_start):today_idx + 1 if mode_used in ("history", "backtest") else None]]
@@ -666,10 +662,6 @@ async def smart_reversal_options_scanner(
 
             # Step 8: Option price recovery
             opt_close_pos = _close_position(opt_ltp, opt_low, opt_high)
-            if opt_close_pos < 70:
-                continue
-            if opt_open > 0 and opt_ltp <= opt_open:
-                continue   # option must close higher than open
 
             # ── Live Volume (convert qty → lots) ──────────────────────────────
             opt_vol_lots = round(opt_vol_qty / lot_size)
@@ -698,8 +690,6 @@ async def smart_reversal_options_scanner(
             )
             if opt_vol_ratio < optionVolumeRatio:
                 continue
-            if yesterday_opt_vol > 0 and opt_vol_lots <= yesterday_opt_vol:
-                continue   # today vol must beat yesterday
 
             # ── Step 6: OI pattern ────────────────────────────────────────────
             oi_pattern, oi_score = _oi_pattern_and_score(
