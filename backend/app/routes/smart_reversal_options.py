@@ -595,8 +595,8 @@ async def smart_reversal_options_scanner(
             iv = delta = gamma = theta = vega = None
             
             if overall_mode_used in ("history", "backtest"):
-                today_idx = stock_data["todayIdx"]
-                if not today_idx or len(opt_hist_sorted) <= today_idx:
+                today_idx = _find_candle_idx(opt_hist_sorted, overall_scan_date) if overall_scan_date else len(opt_hist_sorted) - 1
+                if today_idx < 1:
                     continue
                     
                 today_c = opt_hist_sorted[today_idx]

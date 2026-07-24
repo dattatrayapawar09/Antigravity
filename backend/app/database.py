@@ -174,10 +174,11 @@ class HistoryDB:
     def cleanup(
         self,
         contract_id: str,
+        max_keep: int = 5,
     ):
 
         self.conn.execute(
-            """
+            f"""
             DELETE FROM option_history
 
             WHERE rowid NOT IN (
@@ -190,7 +191,7 @@ class HistoryDB:
 
                 ORDER BY trading_date DESC
 
-                LIMIT 5
+                LIMIT {max_keep}
 
             )
 
@@ -437,6 +438,16 @@ class HistoryDB:
 
         return cur.fetchone() is not None
     
+    def get_candle_count(self, contract_id: str) -> int:
+        cur = self.conn.execute(
+            """
+            SELECT COUNT(*) FROM option_history WHERE contract_id = ?
+            """,
+            (contract_id,)
+        )
+        row = cur.fetchone()
+        return row[0] if row else 0
+
     def history_already_downloaded_today(self) -> bool:
         today = datetime.now().strftime("%Y-%m-%d")
         cur = self.conn.execute(

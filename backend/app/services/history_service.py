@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 
 INTERVAL = "ONE_DAY"
 
-LOOKBACK_DAYS = 10
+LOOKBACK_DAYS_STOCK = 65
+LOOKBACK_DAYS_OPTION = 10
 
 # Angel One historical API rate limit
 MAX_CONCURRENT_REQUESTS = 1
@@ -49,14 +50,14 @@ semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 # Date Helpers
 # ------------------------------------------------------------------
 
-def get_date_range() -> tuple[str, str]:
+def get_date_range(lookback_days: int) -> tuple[str, str]:
     """
     Returns the date range used for historical download.
     """
 
     today = datetime.now()
 
-    start = today - timedelta(days=LOOKBACK_DAYS)
+    start = today - timedelta(days=lookback_days)
 
     return (
         start.strftime("%Y-%m-%d 09:15"),
@@ -71,6 +72,7 @@ def get_date_range() -> tuple[str, str]:
 async def fetch_history(
     exchange: str,
     token: str,
+    lookback_days: int,
 ):
     """
     Download historical candles with retry logic.
@@ -78,7 +80,7 @@ async def fetch_history(
 
     client = get_client()
 
-    from_date, to_date = get_date_range()
+    from_date, to_date = get_date_range(lookback_days)
 
     for attempt in range(MAX_RETRIES):
 
@@ -154,6 +156,7 @@ async def download_contract_history(contract: dict):
         candles = await fetch_history(
             exchange=exchange,
             token=token,
+            lookback_days=LOOKBACK_DAYS_OPTION,
         )
 
         if not candles:
@@ -178,6 +181,7 @@ async def download_contract_history(contract: dict):
         save_history(
             contract_id,
             candles,
+            max_keep=5,
         )
 
         # Prevent Angel One rate limiting
@@ -195,9 +199,10 @@ async def download_stock_history(symbol: str):
     async with semaphore:
         today = datetime.now().strftime("%Y-%m-%d")
 
-        # Skip if already downloaded today
-        if history_db.already_updated(symbol, today):
-            logger.debug("[History] Stock already updated: %s", symbol)
+        # Skip if already downloaded today AND we have enough history
+        has_enough = history_db.get_candle_count(symbol) >= 60
+        if has_enough and history_db.already_updated(symbol, today):
+            logger.debug("[History] Stock already updated and has enough history: %s", symbol)
             return
 
         logger.info("[History] Downloading stock history for %s", symbol)
@@ -208,14 +213,15 @@ async def download_stock_history(symbol: str):
 
         candles = await fetch_history(
             exchange=cash["exchange"],
-            token=cash["symboltoken"]
+            token=cash["symboltoken"],
+            lookback_days=LOOKBACK_DAYS_STOCK,
         )
 
         if not candles:
             logger.debug("[History] No stock history for %s", symbol)
             return
 
-        save_history(symbol, candles)
+        save_history(symbol, candles, max_keep=65)
 
         # Prevent rate limiting
         await asyncio.sleep(REQUEST_DELAY)
@@ -227,6 +233,7 @@ async def download_stock_history(symbol: str):
 def save_history(
     contract_id: str,
     candles: list,
+    max_keep: int = 5,
 ):
     """
     Save the latest five historical candles into SQLite.
@@ -235,8 +242,8 @@ def save_history(
     if not candles:
         return
 
-    # Keep only the latest 5 sessions
-    candles = candles[-6:]
+    # Keep only the latest max_keep sessions
+    candles = candles[-(max_keep + 1):]
 
     saved = 0
 
@@ -267,7 +274,7 @@ def save_history(
                 e,
             )
 
-    history_db.cleanup(contract_id)
+    history_db.cleanup(contract_id, max_keep)
 
     logger.info(
         "[History] Saved %d candles for %s",
@@ -360,8 +367,13 @@ async def update_all_option_history():
 
 async def run_daily_history_update():
 
-    if history_db.history_already_downloaded_today():
-
+    needs_backfill = False
+    if ALL_FNO_STOCKS:
+        first_stock = ALL_FNO_STOCKS[0]
+        if history_db.get_candle_count(first_stock) < 60:
+            needs_backfill = True
+            
+    if not needs_backfill and history_db.history_already_downloaded_today():
         logger.info(
             "[History] Today's history already exists. Skipping download."
         )
