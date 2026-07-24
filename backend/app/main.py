@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 
 from app.background.scheduler import start_background_tasks, startup_init
 from app.config import get_settings
-from app.routes import auth, debug, instruments, equity, scanner
+from app.routes import auth, debug, instruments, equity, scanner, smart_reversal_options
 from app.smartapi import init_client
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -90,7 +90,8 @@ app.include_router(debug.router)          # GET /  and  GET /api/health  etc.
 app.include_router(auth.router)           # GET|POST /api/auth/*
 app.include_router(instruments.router)    # POST /api/instruments/*
 app.include_router(equity.router)         # GET /api/equity/*
-app.include_router(scanner.router)        # GET /api/scanner/*
+app.include_router(scanner.router)                   # GET /api/scanner/*
+app.include_router(smart_reversal_options.router)    # GET /api/scanner/smart-reversal-options
 
 
 # ── Global exception handler ──────────────────────────────────────────────────

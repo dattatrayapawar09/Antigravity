@@ -9,6 +9,7 @@ import {
   FiWifiOff,
   FiClock,
   FiZap,
+  FiTarget,
 } from "react-icons/fi";
 
 import { useMemo } from "react";
@@ -47,6 +48,11 @@ const menuItems = [
     title: "Smart Reversal Scanner",
     path: "/smart-reversal",
     icon: <FiZap size={18} />,
+  },
+  {
+    title: "Smart Reversal Options",
+    path: "/smart-reversal-options",
+    icon: <FiTarget size={18} />,
   },
   {
     title: "Watchlist",

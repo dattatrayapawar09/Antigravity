@@ -186,6 +186,11 @@ export async function getSmartReversal(params = {}) {
   return data;
 }
 
+export async function getSmartReversalOptions(params = {}) {
+  const { data } = await API.get("/scanner/smart-reversal-options", { params });
+  return data;
+}
+
 /* ============================================================
    Scanner API (Future)
 ============================================================ */

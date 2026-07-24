@@ -46,6 +46,10 @@ const SmartReversal = lazy(() =>
   import("./pages/SmartReversal")
 );
 
+const SmartReversalOptions = lazy(() =>
+  import("./pages/SmartReversalOptions")
+);
+
 const Watchlist = lazy(() =>
   import("./pages/Watchlist")
 );
@@ -121,6 +125,11 @@ function App() {
             <Route
               path="/smart-reversal"
               element={<SmartReversal />}
+            />
+
+            <Route
+              path="/smart-reversal-options"
+              element={<SmartReversalOptions />}
             />
 
             <Route
