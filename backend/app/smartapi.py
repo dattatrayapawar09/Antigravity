@@ -480,13 +480,13 @@ class SmartAPIClient:
 
             async with httpx.AsyncClient(timeout=30.0) as client:
 
-                logger.info("[Historical] Payload: %s", payload)
+                logger.debug("[Historical] Payload: %s", payload)
                 headers = self._base_headers(with_auth=True).copy()
 
                 if "Authorization" in headers:
                     headers["Authorization"] = "Bearer ****"
 
-                logger.info(
+                logger.debug(
                     "[Historical] Headers: %s",
                     headers,
                 )
@@ -497,11 +497,15 @@ class SmartAPIClient:
                     headers=self._base_headers(with_auth=True),
                 )
 
-                logger.error("[Historical] Status: %s", response.status_code)
-                logger.error("[Historical] Body: %s", response.text)
-
                 if response.status_code != 200:
+                    logger.error(
+                        "[Historical] HTTP error — Status: %s  Body: %s",
+                        response.status_code, response.text,
+                    )
                     return None
+
+                logger.debug("[Historical] Status: %s", response.status_code)
+                logger.debug("[Historical] Body: %s", response.text)
 
                 try:
                     data = response.json()
