@@ -373,7 +373,15 @@ async def smart_reversal_options_scanner(
                 q  = stock_quotes.get(tk) if tk else None
                 live_vol = int(q.get("volume") or q.get("tradeVolume") or 0) if q else 0
                 
-                if live_vol > 0 and q:
+                is_stale = False
+                if live_vol > 0 and q and len(hist_sorted) > 0:
+                    hc = float(hist_sorted[-1].get("close") or 0)
+                    hv = int(hist_sorted[-1].get("volume") or 0)
+                    qc = float(q.get("ltp") or q.get("close") or 0)
+                    if hc == qc and hv == live_vol:
+                        is_stale = True
+                        
+                if live_vol > 0 and q and not is_stale:
                     today_close = float(q.get("ltp")    or q.get("close")  or 0)
                     today_open  = float(q.get("open")   or 0)
                     today_high  = float(q.get("high")   or 0)

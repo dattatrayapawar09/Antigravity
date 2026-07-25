@@ -259,7 +259,15 @@ async def smart_reversal_scanner(
                 q  = stock_quotes.get(tk) if tk else None
                 live_vol = int(q.get("volume") or q.get("tradeVolume") or 0) if q else 0
 
-                if live_vol > 0 and q:
+                is_stale = False
+                if live_vol > 0 and q and len(hist_sorted) > 0:
+                    hc = float(hist_sorted[-1].get("close") or 0)
+                    hv = int(hist_sorted[-1].get("volume") or 0)
+                    qc = float(q.get("ltp") or q.get("close") or 0)
+                    if hc == qc and hv == live_vol:
+                        is_stale = True
+
+                if live_vol > 0 and q and not is_stale:
                     # Live data valid
                     today_close = float(q.get("ltp")   or q.get("close") or 0)
                     today_open  = float(q.get("open")  or 0)
@@ -273,7 +281,7 @@ async def smart_reversal_scanner(
                     scan_date_label = None
 
                 else:
-                    # Auto fallback — market is closed, use last stored candle as today
+                    # Auto fallback — market is closed or quote is stale, use last stored candle as today
                     if len(hist_sorted) < 2:
                         continue
                     today_idx  = len(hist_sorted) - 1
@@ -283,7 +291,7 @@ async def smart_reversal_scanner(
                     today_open, today_high, today_low, today_close, today_vol = _extract_from_candle(today_c)
                     mode_used  = "history"
                     scan_date_label = today_c.get("trading_date")
-                    logger.debug("[SmartReversal] %s auto→history fallback (live vol=0)", sym)
+                    logger.debug("[SmartReversal] %s auto→history fallback (live_vol=%s, stale=%s)", sym, live_vol, is_stale)
 
             if today_close <= 0 or today_high <= today_low:
                 continue
