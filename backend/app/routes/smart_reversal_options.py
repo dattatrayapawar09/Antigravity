@@ -298,7 +298,7 @@ async def smart_reversal_options_scanner(
             if effective_mode == "live":
                 logger.warning("[SRO] Not authenticated — returning empty")
                 return SmartReversalOptionsResponse(
-                    contracts=[], stocksQualified=0, optionsScanned=0,
+                    stocks=[], stocksQualified=0, optionsScanned=0,
                     totalFnoScanned=len(all_symbols), elapsedMs=0,
                     scanMode=effective_mode, scanDate=scanDate,
                 )
@@ -455,7 +455,7 @@ async def smart_reversal_options_scanner(
     if not qualified_stocks:
         elapsed = int((time.time() - t_start) * 1000)
         resp = SmartReversalOptionsResponse(
-            contracts=[], stocksQualified=0, optionsScanned=0,
+            stocks=[], stocksQualified=0, optionsScanned=0,
             totalFnoScanned=len(all_symbols), elapsedMs=elapsed,
             scanMode=overall_mode_used, scanDate=overall_scan_date
         )

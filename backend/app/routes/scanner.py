@@ -106,6 +106,7 @@ def _compute_score(
     low: float,
     close: float,
     bullish: bool,
+    vol_confirm: bool = False,  # today_vol > yesterday_vol bonus
 ) -> float:
     vol_score      = min(volume_ratio / 5.0, 1.0) * 30
     drop_score     = min(abs(price_drop_pct) / 25.0, 1.0) * 25
@@ -113,7 +114,8 @@ def _compute_score(
     candle_range   = high - low
     recovery_score = ((close - low) / candle_range * 15) if candle_range > 0 else 0
     bull_score     = 10.0 if bullish else 0.0
-    return round(vol_score + drop_score + cp_score + recovery_score + bull_score, 2)
+    confirm_bonus  = 5.0 if vol_confirm else 0.0   # Step-7 bonus
+    return round(vol_score + drop_score + cp_score + recovery_score + bull_score + confirm_bonus, 2)
 
 
 def _compute_signal(
@@ -344,9 +346,8 @@ async def smart_reversal_scanner(
             if close_pos < closePosition:
                 continue
 
-            # ── Step 7: Volume Confirmation ───────────────────────────────────
-            if today_vol <= yesterday_vol:
-                continue
+            # ── Step 7: Volume Confirmation (score bonus, not hard filter) ────
+            vol_confirm = (today_vol > yesterday_vol) if yesterday_vol > 0 else False
 
             # ── Step 8 (optional): VWAP ───────────────────────────────────────
             vwap_confirmed: Optional[bool] = None
@@ -358,7 +359,7 @@ async def smart_reversal_scanner(
             # ── Score & Signal ────────────────────────────────────────────────
             score  = _compute_score(
                 volume_ratio, price_drop_pct, close_pos,
-                today_high, today_low, today_close, bullish_candle,
+                today_high, today_low, today_close, bullish_candle, vol_confirm,
             )
             signal = _compute_signal(
                 price_drop_pct, volume_ratio, close_pos, bullish_candle, lower_low,
