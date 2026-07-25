@@ -336,9 +336,7 @@ async def smart_reversal_scanner(
             if close_pos < closePosition:
                 continue
 
-            # ── Step 7: Volume > Yesterday ────────────────────────────────────
-            if today_vol <= yesterday_vol:
-                continue
+            # ── Step 7: Volume > Yesterday (Removed strict check) ──────────────
 
             # ── Step 8 (optional): VWAP ───────────────────────────────────────
             vwap_confirmed: Optional[bool] = None
