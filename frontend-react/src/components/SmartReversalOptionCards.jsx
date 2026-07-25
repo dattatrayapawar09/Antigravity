@@ -77,29 +77,29 @@ const CARDS = [
 ];
 
 export default function SmartReversalOptionCards({
-  contracts = [],
+  stocks = [],
   stocksQualified = 0,
   optionsScanned = 0,
 }) {
   const stats = useMemo(() => {
-    const n = contracts.length;
+    const n = stocks.length;
     const avgVR =
       n > 0
-        ? (contracts.reduce((s, x) => s + (x.volumeRatio ?? 0), 0) / n).toFixed(2)
+        ? (stocks.reduce((s, x) => s + (x.recommendedOption?.volumeRatio ?? 0), 0) / n).toFixed(2)
         : "0.00";
     const highest =
-      n > 0 ? Math.max(...contracts.map((x) => x.smartScore ?? 0)).toFixed(1) : "0";
+      n > 0 ? Math.max(...stocks.map((x) => x.finalScore ?? 0)).toFixed(1) : "0";
 
     return {
       stocksQualified,
       optionsScanned,
-      strongBullish: contracts.filter((x) => x.signal === "Strong Bullish").length,
-      bullish:       contracts.filter((x) => x.signal === "Bullish").length,
-      watch:         contracts.filter((x) => x.signal === "Watch").length,
+      strongBullish: stocks.filter((x) => x.signal === "Strong Bullish").length,
+      bullish:       stocks.filter((x) => x.signal === "Bullish").length,
+      watch:         stocks.filter((x) => x.signal === "Watch").length,
       avgVolumeRatio: avgVR,
       highestScore:   highest,
     };
-  }, [contracts, stocksQualified, optionsScanned]);
+  }, [stocks, stocksQualified, optionsScanned]);
 
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-7">

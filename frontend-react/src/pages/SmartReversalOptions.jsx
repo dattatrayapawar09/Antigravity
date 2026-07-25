@@ -23,8 +23,8 @@ const DEFAULT_PARAMS = {
 export default function SmartReversalOptions() {
   const { backendConnected, refreshInterval } = useScanner();
 
-  const [contracts,         setContracts        ] = useState([]);
-  const [filteredContracts, setFilteredContracts] = useState([]);
+  const [stocks,            setStocks           ] = useState([]);
+  const [filteredStocks,    setFilteredStocks   ] = useState([]);
   const [loading,           setLoading          ] = useState(false);
   const [error,             setError            ] = useState("");
   const [lastRefresh,       setLastRefresh      ] = useState(null);
@@ -44,24 +44,24 @@ export default function SmartReversalOptions() {
     try {
       const p        = overrideParams ?? params.current;
       const response = await getSmartReversalOptions(p);
-      if (response?.contracts) {
-        setContracts(response.contracts);
-        setFilteredContracts(response.contracts);
+      if (response?.stocks) {
+        setStocks(response.stocks);
+        setFilteredStocks(response.stocks);
         setScanMeta({
           stocksQualified: response.stocksQualified ?? 0,
           optionsScanned:  response.optionsScanned  ?? 0,
           elapsedMs:       response.elapsedMs       ?? 0,
         });
       } else {
-        setContracts([]);
-        setFilteredContracts([]);
+        setStocks([]);
+        setFilteredStocks([]);
       }
       setLastRefresh(new Date());
     } catch (err) {
       console.error("SmartReversalOptions fetch error:", err);
       setError("Failed to fetch Smart Reversal Options data. Check backend connection.");
-      setContracts([]);
-      setFilteredContracts([]);
+      setStocks([]);
+      setFilteredStocks([]);
     } finally {
       setLoading(false);
     }
@@ -125,7 +125,7 @@ export default function SmartReversalOptions() {
                 <span className="font-bold text-sky-400">{scanMeta.optionsScanned}</span> options scanned
               </span>
               <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-slate-400">
-                <span className="font-bold text-violet-400">{contracts.length}</span> matched
+                <span className="font-bold text-violet-400">{stocks.length}</span> matched
               </span>
               <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-slate-400">
                 {scanMeta.elapsedMs}ms
@@ -172,32 +172,32 @@ export default function SmartReversalOptions() {
 
       {/* Summary Cards */}
       <SmartReversalOptionCards
-        contracts={filteredContracts}
+        stocks={filteredStocks}
         stocksQualified={scanMeta.stocksQualified}
         optionsScanned={scanMeta.optionsScanned}
       />
 
       {/* Filters */}
       <SmartReversalOptionFilters
-        contracts={contracts}
-        onFilterChange={setFilteredContracts}
+        stocks={stocks}
+        onFilterChange={setFilteredStocks}
         onParamChange={handleParamChange}
       />
 
       {/* Table */}
-      {loading && !contracts.length ? (
+      {loading && !stocks.length ? (
         <Loading />
       ) : (
-        <SmartReversalOptionTable data={filteredContracts} />
+        <SmartReversalOptionTable data={filteredStocks} />
       )}
 
       {/* Footer */}
       <div className="flex flex-col gap-2 rounded-xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400 md:flex-row md:items-center md:justify-between">
         <div>
           Showing{" "}
-          <span className="font-semibold text-violet-400">{filteredContracts.length}</span>
+          <span className="font-semibold text-violet-400">{filteredStocks.length}</span>
           {" "}of{" "}
-          <span className="font-semibold text-white">{contracts.length}</span>{" "}
+          <span className="font-semibold text-white">{stocks.length}</span>{" "}
           option setups
         </div>
         <div>

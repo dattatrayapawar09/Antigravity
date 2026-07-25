@@ -102,16 +102,15 @@ function UnderlyingTooltipContent({ row }) {
 }
 
 function VolumeTooltipContent({ row }) {
-  const maxV = Math.max(...(row.optionVolumeHistory ?? [1]), 1);
+  const opt = row.recommendedOption || {};
   return (
     <div>
       <p className="mb-2 font-semibold text-slate-200">Option Volume</p>
       <div className="space-y-1">
         {[
-          ["Today (lots)",    fmtVol(row.optionVolume)],
-          ["Yesterday (lots)",fmtVol(row.yesterdayOptionVolume)],
-          ["5D Avg (lots)",   <span key="avg" className="text-cyan-300 font-medium">{fmtVol(row.avgOptionVolume)}</span>],
-          ["Vol Ratio",       <span key="vr" className="font-bold text-green-400">{fmt(row.volumeRatio)}x</span>],
+          ["Today (lots)",    fmtVol(opt.volume)],
+          ["5D Avg (lots)",   <span key="avg" className="text-cyan-300 font-medium">{fmtVol(opt.avgVolume)}</span>],
+          ["Vol Ratio",       <span key="vr" className="font-bold text-green-400">{fmt(opt.volumeRatio)}x</span>],
         ].map(([label, val]) => (
           <div key={label} className="flex justify-between gap-4">
             <span className="text-slate-400">{label}</span>
@@ -119,57 +118,25 @@ function VolumeTooltipContent({ row }) {
           </div>
         ))}
       </div>
-      {(row.optionVolumeHistory?.length ?? 0) > 0 && (
-        <div className="mt-3 border-t border-slate-700 pt-2">
-          <p className="mb-1 text-slate-500">Last sessions</p>
-          <div className="flex items-end gap-0.5" style={{ height: 28 }}>
-            {row.optionVolumeHistory.map((v, i) => {
-              const h = Math.max(4, Math.round((v / maxV) * 28));
-              return (
-                <div
-                  key={i}
-                  className="flex-1 rounded-sm bg-violet-600/70"
-                  style={{ height: h }}
-                  title={fmtVol(v)}
-                />
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
 function OITooltipContent({ row }) {
-  const patternColor = {
-    "Long Build-up":  "text-emerald-400",
-    "Short Covering": "text-green-400",
-    "Short Build-up": "text-red-400",
-    "Long Unwinding": "text-rose-400",
-    "Neutral":        "text-slate-400",
-  }[row.oiPattern] ?? "text-slate-400";
-
+  const opt = row.recommendedOption || {};
   return (
     <div>
       <p className="mb-2 font-semibold text-slate-200">Open Interest</p>
       <div className="space-y-1">
         {[
-          ["Current OI",   fmtVol(row.oi)],
-          ["Previous OI",  fmtVol(row.prevOI)],
-          ["OI Change",    <span key="oic" className={row.oiChange >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>{row.oiChange >= 0 ? "+" : ""}{fmt(row.oiChange)}%</span>],
-          ["Pattern",      <span key="pat" className={`font-semibold ${patternColor}`}>{row.oiPattern}</span>],
+          ["Current OI",   fmtVol(opt.oi)],
+          ["OI Change",    <span key="oic" className={opt.oiChange >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>{opt.oiChange >= 0 ? "+" : ""}{fmt(opt.oiChange)}%</span>],
         ].map(([label, val]) => (
           <div key={label} className="flex justify-between gap-4">
             <span className="text-slate-400">{label}</span>
             <span className="font-medium text-white">{val}</span>
           </div>
         ))}
-      </div>
-      <div className="mt-3 border-t border-slate-700 pt-2 text-xs text-slate-500">
-        CE: OI↑+Price↑ = Long Build-up<br />
-        CE: OI↓+Price↑ = Short Covering<br />
-        PE: OI↓+Price↓ = Short Covering
       </div>
     </div>
   );
@@ -180,22 +147,16 @@ function OITooltipContent({ row }) {
 const COLUMNS = [
   { key: "rank",             label: "Rank",       align: "center" },
   { key: "symbol",           label: "Stock",      align: "left"   },
-  { key: "sector",           label: "Sector",     align: "left"   },
-  { key: "underlyingScore",  label: "Und. Score", align: "right"  },
-  { key: "recentHigh",       label: "Rec. High",  align: "right"  },
   { key: "currentPrice",     label: "Price",      align: "right"  },
   { key: "priceDropPercent", label: "% Drop",     align: "right"  },
-  { key: "strike",           label: "Strike",     align: "right"  },
-  { key: "optionType",       label: "Type",       align: "center" },
+  { key: "strike",           label: "Rec. Option",align: "center" },
   { key: "expiry",           label: "Expiry",     align: "center" },
   { key: "optionLTP",        label: "LTP",        align: "right"  },
-  { key: "optionVolume",     label: "Volume",     align: "right"  },
-  { key: "avgOptionVolume",  label: "5D Avg Vol", align: "right"  },
   { key: "volumeRatio",      label: "Vol Ratio",  align: "right"  },
-  { key: "oi",               label: "OI",         align: "right"  },
   { key: "oiChange",         label: "OI Chg",     align: "right"  },
-  { key: "spreadPct",        label: "Spread",     align: "right"  },
-  { key: "smartScore",       label: "Score",      align: "right"  },
+  { key: "underlyingScore",  label: "Und. Score", align: "right"  },
+  { key: "smartScore",       label: "Opt. Score", align: "right"  },
+  { key: "finalScore",       label: "Final Score",align: "right"  },
   { key: "signal",           label: "Signal",     align: "center" },
 ];
 
@@ -261,8 +222,9 @@ export default function SmartReversalOptionTable({ data = [] }) {
 
         <tbody>
           {sorted.map((row, i) => {
-            const vr        = Number(row.volumeRatio ?? 0);
-            const oiChg     = Number(row.oiChange    ?? 0);
+            const opt       = row.recommendedOption || {};
+            const vr        = Number(opt.volumeRatio ?? 0);
+            const oiChg     = Number(opt.oiChange    ?? 0);
             const undScore  = Number(row.underlyingScore ?? 0);
 
             const vrCls =
@@ -277,7 +239,7 @@ export default function SmartReversalOptionTable({ data = [] }) {
 
             return (
               <tr
-                key={`${row.symbol}-${row.strike}-${row.optionType}-${row.expiry}-${i}`}
+                key={`${row.symbol}-${opt.strike}-${opt.type}-${opt.expiry}-${i}`}
                 className="border-b border-slate-800 transition-colors hover:bg-slate-800/50"
               >
                 {/* Rank */}
@@ -293,9 +255,58 @@ export default function SmartReversalOptionTable({ data = [] }) {
                   </div>
                 </td>
 
-                {/* Sector */}
-                <td className="max-w-[120px] truncate px-3 py-3 text-slate-400 text-xs">
-                  {row.sector}
+                {/* Current Price */}
+                <td className="px-3 py-3 text-right font-semibold text-white">
+                  ₹{fmt(row.currentPrice)}
+                </td>
+
+                {/* % Drop */}
+                <td className="px-3 py-3 text-right font-bold text-red-400">
+                  {fmt(row.priceDropPercent)}%
+                </td>
+
+                {/* Rec. Option */}
+                <td className="px-3 py-3 text-center">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span className="font-semibold text-slate-200">{fmt(opt.strike, 0)}</span>
+                    <TypeBadge type={opt.type} />
+                  </div>
+                </td>
+
+                {/* Expiry */}
+                <td className="whitespace-nowrap px-3 py-3 text-center text-xs text-slate-400">
+                  {opt.expiry}
+                </td>
+
+                {/* LTP */}
+                <td className="px-3 py-3 text-right font-bold text-white">
+                  ₹{fmt(opt.ltp)}
+                </td>
+
+                {/* Vol Ratio (with tooltip) */}
+                <td className="px-3 py-3 text-right">
+                  <OptionTooltip
+                    content={<VolumeTooltipContent row={row} />}
+                    width="w-56"
+                  >
+                    <span className={`cursor-help rounded border px-2 py-0.5 text-xs font-bold underline decoration-dotted decoration-slate-600 ${vrCls}`}>
+                      {fmt(vr)}x
+                    </span>
+                  </OptionTooltip>
+                </td>
+
+                {/* OI Change (with tooltip) */}
+                <td className="px-3 py-3 text-right">
+                  <OptionTooltip
+                    content={<OITooltipContent row={row} />}
+                    width="w-64"
+                  >
+                    <span className="cursor-help underline decoration-dotted decoration-slate-600">
+                      <span className={oiChg >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
+                        {oiChg >= 0 ? "+" : ""}{fmt(oiChg)}%
+                      </span>
+                    </span>
+                  </OptionTooltip>
                 </td>
 
                 {/* Underlying Score (with tooltip) */}
@@ -310,96 +321,14 @@ export default function SmartReversalOptionTable({ data = [] }) {
                   </OptionTooltip>
                 </td>
 
-                {/* Recent High */}
-                <td className="px-3 py-3 text-right font-medium text-slate-300">
-                  ₹{fmt(row.recentHigh)}
-                </td>
-
-                {/* Current Price */}
-                <td className="px-3 py-3 text-right font-semibold text-white">
-                  ₹{fmt(row.currentPrice)}
-                </td>
-
-                {/* % Drop */}
-                <td className="px-3 py-3 text-right font-bold text-red-400">
-                  {fmt(row.priceDropPercent)}%
-                </td>
-
-                {/* Strike */}
-                <td className="px-3 py-3 text-right font-semibold text-slate-200">
-                  {fmt(row.strike, 0)}
-                </td>
-
-                {/* Option Type badge */}
-                <td className="px-3 py-3 text-center">
-                  <TypeBadge type={row.optionType} />
-                </td>
-
-                {/* Expiry */}
-                <td className="whitespace-nowrap px-3 py-3 text-center text-xs text-slate-400">
-                  {row.expiry}
-                </td>
-
-                {/* LTP */}
-                <td className="px-3 py-3 text-right font-bold text-white">
-                  ₹{fmt(row.optionLTP)}
-                </td>
-
-                {/* Option Volume */}
-                <td className="px-3 py-3 text-right text-slate-300">
-                  {fmtVol(row.optionVolume)}
-                </td>
-
-                {/* 5D Avg Vol (with tooltip) */}
-                <td className="px-3 py-3 text-right">
-                  <OptionTooltip
-                    content={<VolumeTooltipContent row={row} />}
-                    width="w-56"
-                  >
-                    <span className="cursor-help text-slate-400 underline decoration-dotted decoration-slate-600">
-                      {fmtVol(row.avgOptionVolume)}
-                    </span>
-                  </OptionTooltip>
-                </td>
-
-                {/* Vol Ratio */}
-                <td className="px-3 py-3 text-right">
-                  <span className={`rounded border px-2 py-0.5 text-xs font-bold ${vrCls}`}>
-                    {fmt(vr)}x
-                  </span>
-                </td>
-
-                {/* OI */}
-                <td className="px-3 py-3 text-right text-slate-300">
-                  {fmtVol(row.oi)}
-                </td>
-
-                {/* OI Change (with tooltip) */}
-                <td className="px-3 py-3 text-right">
-                  <OptionTooltip
-                    content={<OITooltipContent row={row} />}
-                    width="w-64"
-                  >
-                    <span className="cursor-help">
-                      <span className={oiChg >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
-                        {oiChg >= 0 ? "+" : ""}{fmt(oiChg)}%
-                      </span>
-                      <br />
-                      <OIBadge pattern={row.oiPattern} />
-                    </span>
-                  </OptionTooltip>
-                </td>
-
-                {/* Spread % */}
-                <td className="px-3 py-3 text-right">
-                  <span className={row.spreadPct <= 1 ? "text-green-400" : row.spreadPct <= 2 ? "text-amber-400" : "text-red-400"}>
-                    {fmt(row.spreadPct)}%
-                  </span>
-                </td>
-
                 {/* Smart Score */}
                 <td className="px-3 py-3 text-right">
-                  <ScoreBadge score={row.smartScore} />
+                  <ScoreBadge score={opt.score} />
+                </td>
+
+                {/* Final Score */}
+                <td className="px-3 py-3 text-right text-lg">
+                  <ScoreBadge score={row.finalScore} />
                 </td>
 
                 {/* Signal */}

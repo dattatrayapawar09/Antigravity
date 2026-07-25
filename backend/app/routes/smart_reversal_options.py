@@ -31,7 +31,21 @@ _CACHE_TTL = 60   # seconds
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
-class SmartReversalOptionContract(BaseModel):
+class RecommendedOption(BaseModel):
+    strike: float
+    type: str             # CE / PE
+    expiry: str
+    ltp: float
+    volume: int           # today – converted to lots
+    avgVolume: int        # 5-day avg – in lots
+    volumeRatio: float
+    oi: int
+    oiChange: float       # % change vs previous session
+    spread: float
+    score: float          # Trade Quality Score (0-100)
+
+
+class SmartReversalStockWithOption(BaseModel):
     rank: int
 
     # Stock identity
@@ -48,46 +62,9 @@ class SmartReversalOptionContract(BaseModel):
     stockClosePosition: float
     stockVolumeHistory: List[int]
 
-    # Option contract identity
-    optionType: str       # CE / PE
-    strike: float
-    expiry: str
-    lotSize: int
+    recommendedOption: RecommendedOption
 
-    # Option OHLC (live quote)
-    optionLTP: float
-    optionOpen: float
-    optionHigh: float
-    optionLow: float
-    optionClosePosition: float
-
-    # Option volume
-    optionVolume: int          # today – converted to lots
-    avgOptionVolume: int       # 5-day avg – in lots
-    yesterdayOptionVolume: int
-    volumeRatio: float
-    optionVolumeHistory: List[int]
-
-    # Open Interest
-    oi: int
-    prevOI: int
-    oiChange: float            # % change vs previous session
-    oiPattern: str             # Long Build-up / Short Covering / etc.
-
-    # Liquidity
-    bid: float
-    ask: float
-    spread: float
-    spreadPct: float
-
-    # Greeks (optional – absent if Angel One does not return them)
-    iv: Optional[float] = None
-    delta: Optional[float] = None
-    gamma: Optional[float] = None
-    theta: Optional[float] = None
-    vega: Optional[float] = None
-
-    smartScore: float
+    finalScore: float
     signal: str                # Strong Bullish / Bullish / Watch / Ignore
     
     # Backtest metadata
@@ -96,7 +73,7 @@ class SmartReversalOptionContract(BaseModel):
 
 
 class SmartReversalOptionsResponse(BaseModel):
-    contracts: List[SmartReversalOptionContract]
+    stocks: List[SmartReversalStockWithOption]
     stocksQualified: int
     optionsScanned: int
     totalFnoScanned: int
@@ -172,17 +149,17 @@ def _close_position(ltp: float, low: float, high: float) -> float:
 def _option_smart_score(
     underlying_score: float,
     opt_vol_ratio: float,
-    oi_score: float,         # raw 0-20 from _oi_pattern_and_score
-    opt_close_pos: float,
+    oi_score: float,         # already 0-20
     spread_pct: float,
     max_spread_pct: float,
+    atm_dist_pct: float,
 ) -> float:
-    u_s   = (underlying_score / 100.0) * 35
+    u_s   = (underlying_score / 100.0) * 40
     vr_s  = min(opt_vol_ratio / 5.0, 1.0) * 25
-    oi_s  = oi_score                       # already 0-20
-    cp_s  = (opt_close_pos / 100.0) * 10
+    oi_s  = oi_score                       
     liq_s = max(0.0, (max_spread_pct - spread_pct) / max(max_spread_pct, 0.1)) * 10
-    return round(u_s + vr_s + oi_s + cp_s + liq_s, 2)
+    atm_s = max(0.0, 5.0 - atm_dist_pct) # 0 distance = 5 score, 5% distance = 0 score
+    return round(u_s + vr_s + oi_s + liq_s + atm_s, 2)
 
 
 # ── Helper: option signal ─────────────────────────────────────────────────────
@@ -576,7 +553,7 @@ async def smart_reversal_options_scanner(
     # ─────────────────────────────────────────────────────────────────────────
     # Phase 5: Per-contract scoring and signal
     # ─────────────────────────────────────────────────────────────────────────
-    results: list[SmartReversalOptionContract] = []
+    best_options: Dict[str, dict] = {}
     options_scanned = 0
 
     for token, meta in option_meta.items():
@@ -708,13 +685,15 @@ async def smart_reversal_options_scanner(
             opt_vol_history = [int(h.get("volume") or 0) // lot_size for h in opt_vol_history_list]
 
             # ── Smart Score ───────────────────────────────────────────────────
+            atm_dist_pct = min(abs(meta["strike"] - stock_data["spot"]) / stock_data["spot"] * 100, 5.0)
+
             smart_score = _option_smart_score(
                 stock_data["score"],
                 opt_vol_ratio,
                 oi_score,
-                opt_close_pos,
                 spread_pct,
                 maxSpreadPct,
+                atm_dist_pct,
             )
 
             # ── Signal ────────────────────────────────────────────────────────
@@ -729,64 +708,32 @@ async def smart_reversal_options_scanner(
             if signal == "Ignore":
                 continue
 
-            # ── Metadata ──────────────────────────────────────────────────────
-            meta2 = get_stock_metadata(sym)
-
-            results.append(
-                SmartReversalOptionContract(
-                    rank=0,
-                    symbol=sym,
-                    company=meta2["name"],
-                    sector=meta2["sector"],
-
-                    underlyingScore=stock_data["score"],
-                    recentHigh=stock_data["recentHigh"],
-                    currentPrice=round(stock_data["spot"], 2),
-                    priceDropPercent=stock_data["priceDropPct"],
-                    stockVolumeRatio=stock_data["volRatio"],
-                    stockClosePosition=stock_data["closePos"],
-                    stockVolumeHistory=stock_data["volHistory"],
-
-                    optionType=opt_type,
-                    strike=meta["strike"],
-                    expiry=meta["expiry"],
-                    lotSize=lot_size,
-
-                    optionLTP=round(opt_ltp, 2),
-                    optionOpen=round(opt_open, 2),
-                    optionHigh=round(opt_high, 2),
-                    optionLow=round(opt_low, 2),
-                    optionClosePosition=opt_close_pos,
-
-                    optionVolume=opt_vol_lots,
-                    avgOptionVolume=avg_opt_vol,
-                    yesterdayOptionVolume=yesterday_opt_vol,
-                    volumeRatio=opt_vol_ratio,
-                    optionVolumeHistory=opt_vol_history,
-
-                    oi=current_oi,
-                    prevOI=prev_oi,
-                    oiChange=oi_change_pct,
-                    oiPattern=oi_pattern,
-
-                    bid=round(bid, 2),
-                    ask=round(ask, 2),
-                    spread=round(spread, 2),
-                    spreadPct=round(spread_pct, 2),
-
-                    iv=round(iv, 2) if iv else None,
-                    delta=round(delta, 4) if delta else None,
-                    gamma=round(gamma, 6) if gamma else None,
-                    theta=round(theta, 4) if theta else None,
-                    vega=round(vega, 4) if vega else None,
-
-                    smartScore=smart_score,
-                    signal=signal,
-                    
-                    scanDate=overall_scan_date,
-                    scanMode=overall_mode_used,
-                )
+            rec_opt = RecommendedOption(
+                strike=meta["strike"],
+                type=opt_type,
+                expiry=meta["expiry"],
+                ltp=round(opt_ltp, 2),
+                volume=opt_vol_lots,
+                avgVolume=avg_opt_vol,
+                volumeRatio=opt_vol_ratio,
+                oi=current_oi,
+                oiChange=oi_change_pct,
+                spread=round(spread, 2),
+                score=smart_score,
             )
+
+            if sym not in best_options or smart_score > best_options[sym]["rec_opt"].score:
+                meta2 = get_stock_metadata(sym)
+                final_score = round(stock_data["score"] * 0.6 + smart_score * 0.4, 2)
+                best_options[sym] = {
+                    "rec_opt": rec_opt,
+                    "meta2": meta2,
+                    "final_score": final_score,
+                    "signal": signal,
+                    "overall_scan_date": overall_scan_date,
+                    "overall_mode_used": overall_mode_used,
+                    "stock_data": stock_data
+                }
 
         except Exception as exc:
             logger.warning("[SRO] Scoring error token=%s: %s", token, exc)
@@ -794,25 +741,48 @@ async def smart_reversal_options_scanner(
     # ─────────────────────────────────────────────────────────────────────────
     # Phase 6: Sort, rank, cache, return
     # ─────────────────────────────────────────────────────────────────────────
-    results.sort(key=lambda x: x.smartScore, reverse=True)
+    results: List[SmartReversalStockWithOption] = []
+    for sym, data in best_options.items():
+        results.append(
+            SmartReversalStockWithOption(
+                rank=0,
+                symbol=sym,
+                company=data["meta2"]["name"],
+                sector=data["meta2"]["sector"],
+                underlyingScore=data["stock_data"]["score"],
+                recentHigh=data["stock_data"]["recentHigh"],
+                currentPrice=round(data["stock_data"]["spot"], 2),
+                priceDropPercent=data["stock_data"]["priceDropPct"],
+                stockVolumeRatio=data["stock_data"]["volRatio"],
+                stockClosePosition=data["stock_data"]["closePos"],
+                stockVolumeHistory=data["stock_data"]["volHistory"],
+                recommendedOption=data["rec_opt"],
+                finalScore=data["final_score"],
+                signal=data["signal"],
+                scanDate=data["overall_scan_date"],
+                scanMode=data["overall_mode_used"],
+            )
+        )
+
+    results.sort(key=lambda x: x.finalScore, reverse=True)
     results = results[:limit]
     for idx, c in enumerate(results, start=1):
         c.rank = idx
 
     elapsed_ms = int((time.time() - t_start) * 1000)
     logger.info(
-        "[SRO] Done — %d contracts from %d stocks | %d options scanned | mode=%s | %dms",
-        len(results), len(qualified_stocks), options_scanned, overall_mode_used, elapsed_ms,
+        "[SRO] Done — %d stocks qualified | %d options scanned | mode=%s | %dms",
+        len(results), options_scanned, effective_mode, elapsed_ms,
     )
 
     response = SmartReversalOptionsResponse(
-        contracts=results,
+        stocks=results,
         stocksQualified=len(qualified_stocks),
         optionsScanned=options_scanned,
         totalFnoScanned=len(all_symbols),
         elapsedMs=elapsed_ms,
-        scanMode=overall_mode_used,
-        scanDate=overall_scan_date,
+        scanMode=effective_mode,
+        scanDate=scanDate,
     )
     _sro_cache[cache_key] = {"ts": time.time(), "data": response}
     return response

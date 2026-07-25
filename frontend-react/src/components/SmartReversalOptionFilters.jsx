@@ -31,7 +31,7 @@ const SPREAD_OPTS      = [
   { value: 5.0, label: "5%" },
 ];
 const SORT_OPTS        = [
-  { value: "smartScore",      label: "Smart Score"    },
+  { value: "finalScore",      label: "Final Score"    },
   { value: "volumeRatio",     label: "Vol Ratio"      },
   { value: "oiChange",        label: "OI Change"      },
   { value: "priceDropPercent",label: "Price Drop"     },
@@ -63,7 +63,7 @@ const DEFAULT_CLIENT = {
   signal: "All",
   sector: "All",
   search: "",
-  sortBy: "smartScore",
+  sortBy: "finalScore",
 };
 
 /* ── select helper ───────────────────────────────────────────────────────────── */
@@ -91,8 +91,8 @@ function Sel({ id, label, value, onChange, children, className = "" }) {
 /* ── component ──────────────────────────────────────────────────────────────── */
 
 export default function SmartReversalOptionFilters({
-  contracts = [],
-  onFilterChange,   // (filteredContracts) => void
+  stocks = [],
+  onFilterChange,   // (filteredStocks) => void
   onParamChange,    // (serverParams) => void — triggers re-fetch
 }) {
   const [server, setServer] = useState(DEFAULT_SERVER);
@@ -101,7 +101,7 @@ export default function SmartReversalOptionFilters({
   // Dynamic sector list from live data
   const sectors = [
     "All",
-    ...Array.from(new Set(contracts.map((x) => x.sector).filter(Boolean))).sort(),
+    ...Array.from(new Set(stocks.map((x) => x.sector).filter(Boolean))).sort(),
   ];
 
   // Notify parent of server-param changes
@@ -121,7 +121,7 @@ export default function SmartReversalOptionFilters({
 
   // Client-side filtering
   useEffect(() => {
-    let filtered = [...contracts];
+    let filtered = [...stocks];
 
     if (client.search.trim()) {
       const kw = client.search.trim().toLowerCase();
@@ -140,15 +140,22 @@ export default function SmartReversalOptionFilters({
 
     // Sort
     filtered.sort((a, b) => {
-      const av = a[client.sortBy] ?? 0;
-      const bv = b[client.sortBy] ?? 0;
+      let av = a[client.sortBy] ?? 0;
+      let bv = b[client.sortBy] ?? 0;
+      
+      // Handle nested option properties
+      if (client.sortBy === "volumeRatio" || client.sortBy === "oiChange") {
+        av = a.recommendedOption?.[client.sortBy] ?? 0;
+        bv = b.recommendedOption?.[client.sortBy] ?? 0;
+      }
+
       if (client.sortBy === "priceDropPercent") return av - bv; // more negative first
       return bv - av;
     });
 
     onFilterChange(filtered);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contracts, client]);
+  }, [stocks, client]);
 
   const setS = useCallback((k, v) => setServer((p) => ({ ...p, [k]: v })), []);
   const setC = useCallback((k, v) => setClient((p) => ({ ...p, [k]: v })), []);
