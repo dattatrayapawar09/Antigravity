@@ -124,7 +124,7 @@ def _compute_signal(
     lower_low: bool,
 ) -> str:
     drop = abs(price_drop_pct)
-    if drop >= 10 and volume_ratio >= 3 and close_pos >= 80 and bullish:
+    if drop >= 10 and volume_ratio >= 3 and close_pos >= 80 and bullish and lower_low:
         return "Strong Reversal"
     if drop >= 10 and volume_ratio >= 2 and close_pos >= 70:
         return "Reversal"
@@ -344,7 +344,9 @@ async def smart_reversal_scanner(
             if close_pos < closePosition:
                 continue
 
-            # ── Step 7: Volume > Yesterday (Removed strict check) ──────────────
+            # ── Step 7: Volume Confirmation ───────────────────────────────────
+            if today_vol <= yesterday_vol:
+                continue
 
             # ── Step 8 (optional): VWAP ───────────────────────────────────────
             vwap_confirmed: Optional[bool] = None
