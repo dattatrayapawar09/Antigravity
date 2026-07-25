@@ -397,8 +397,6 @@ async def smart_reversal_options_scanner(
 
             # Step 2: Price Drop
             price_drop_pct = ((today_close - recent_high) / recent_high) * 100
-            if price_drop_pct > -minPriceDrop:
-                continue
 
             # Yesterday's session values
             yesterday_low = float(yesterday.get("low")    or 0)
@@ -411,8 +409,6 @@ async def smart_reversal_options_scanner(
                 if recent_5 else 0
             )
             vol_ratio = round(today_vol / avg_vol, 2) if avg_vol > 0 else 0.0
-            if vol_ratio < minVolumeRatio:
-                continue
 
             # Step 3b: Stock price recovery (bullish candle + close position)
             candle_rng = today_high - today_low
@@ -420,8 +416,6 @@ async def smart_reversal_options_scanner(
                 round(((today_close - today_low) / candle_rng) * 100, 2)
                 if candle_rng > 0 else 0.0
             )
-            if close_pos < closePosition:
-                continue
             bullish_candle = today_close > today_open
             lower_low      = (today_low < yesterday_low) if yesterday_low > 0 else False
 
@@ -640,7 +634,7 @@ async def smart_reversal_options_scanner(
                 opt_vol_history_list = opt_hist_sorted[-6:]
                 
                 if spread_pct > maxSpreadPct:
-                    continue   # too illiquid
+                    pass   # allow scoring but will be penalized for illiquidity
 
             if opt_ltp <= 0:
                 continue
@@ -653,7 +647,7 @@ async def smart_reversal_options_scanner(
             yesterday_opt_vol = round(yesterday_opt_vol_qty / lot_size)
             
             if current_oi < minOI:
-                continue
+                pass # let score handle it
 
             # ── Option history: avg vol + prev OI ─────────────────────────────
             avg_opt_vol_qty  = (
@@ -673,8 +667,7 @@ async def smart_reversal_options_scanner(
                 if avg_opt_vol > 0
                 else (1.0 if opt_vol_lots > 0 else 0.0)
             )
-            if opt_vol_ratio < optionVolumeRatio:
-                continue
+            # opt_vol_ratio is used in score; no hard filter
 
             # ── Step 6: OI pattern ────────────────────────────────────────────
             oi_pattern, oi_score = _oi_pattern_and_score(

@@ -317,8 +317,6 @@ async def smart_reversal_scanner(
 
             # ── Step 2: Price Drop ────────────────────────────────────────────
             price_drop_pct = ((today_close - recent_high) / recent_high) * 100
-            if price_drop_pct > -minPriceDrop:
-                continue
 
             # ── Step 3: Volume Ratio ──────────────────────────────────────────
             recent_5 = hist_sorted[-5:] if not use_history else (
@@ -329,8 +327,6 @@ async def smart_reversal_scanner(
                 if recent_5 else 0
             )
             volume_ratio = round(today_vol / avg_vol, 2) if avg_vol > 0 else 0.0
-            if volume_ratio < minVolumeRatio:
-                continue
 
             # ── Step 4: Lower Low ─────────────────────────────────────────────
             lower_low = (today_low < yesterday_low) if yesterday_low > 0 else False
@@ -343,8 +339,6 @@ async def smart_reversal_scanner(
             close_pos = round(
                 ((today_close - today_low) / candle_range) * 100, 2
             ) if candle_range > 0 else 0.0
-            if close_pos < closePosition:
-                continue
 
             # ── Step 7: Volume Confirmation (score bonus, not hard filter) ────
             vol_confirm = (today_vol > yesterday_vol) if yesterday_vol > 0 else False
